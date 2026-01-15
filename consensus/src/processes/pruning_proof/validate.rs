@@ -258,6 +258,11 @@ impl PruningProofManager {
                 info!("Validating level {level} from the pruning point proof ({} headers)", proof[level as usize].len());
             }
             let level_idx = level as usize;
+            // SEDRA (security back-port, upstream d6333234 part): reject an empty level instead of panicking on
+            // `selected_tip.unwrap()` below (a panic exits the node)
+            if proof[level_idx].is_empty() {
+                return Err(PruningImportError::PruningProofEmptyLevel(level));
+            }
             let mut selected_tip = None;
             for (i, header) in proof[level as usize].iter().enumerate() {
                 let (header_level, pow_passes) = calc_block_level_check_pow(header, self.max_block_level);
@@ -336,6 +341,13 @@ impl PruningProofManager {
                 && !self.parents_manager.parents_at_level(proof_pp_header, level).contains(&selected_tip.unwrap())
             {
                 return Err(PruningImportError::PruningProofMissesBlocksBelowPruningPoint(selected_tip.unwrap(), level));
+            }
+
+            // SEDRA (security back-port, upstream 48b63582): a level that does not start at genesis must be a full level
+            let tip_blue_score = ghostdag_stores[level_idx].get_blue_score(selected_tip.unwrap()).unwrap();
+            let level_root = proof[level_idx].first().expect("checked above").hash;
+            if level_root != self.genesis_hash && tip_blue_score < 2 * self.pruning_proof_m {
+                return Err(PruningImportError::PruningProofSelectedTipNotEnoughBlueScore(selected_tip.unwrap(), level, tip_blue_score));
             }
 
             selected_tip_by_level[level_idx] = selected_tip;

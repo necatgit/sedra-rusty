@@ -2257,3 +2257,28 @@ async fn sedra_difficulty_reset_wiring_test() {
 
     consensus.shutdown(wait_handles);
 }
+
+/// SEDRA (security back-port): a pruning point proof with an empty level must be rejected with an error. With the
+/// original v1.0.1 code it reached `selected_tip.unwrap()` on `None` and panicked, which exits the node.
+#[tokio::test]
+async fn sedra_pruning_proof_empty_level_is_rejected_test() {
+    init_allocator_with_default_settings();
+    let config = ConfigBuilder::new(MAINNET_PARAMS).skip_proof_of_work().build();
+    let consensus = TestConsensus::new(&config);
+    let wait_handles = consensus.init();
+
+    let genesis_header = consensus.headers_store().get_header(config.genesis.hash).unwrap();
+    let levels = config.max_block_level as usize + 1;
+    // Level 0 holds genesis, all higher levels are empty
+    let proof: kaspa_consensus_core::pruning::PruningPointProof =
+        (0..levels).map(|level| if level == 0 { vec![genesis_header.clone()] } else { vec![] }).collect();
+    let metadata = kaspa_consensus_core::pruning::PruningProofMetadata::new(0u64.into());
+
+    let result = consensus.validate_pruning_proof(&proof, &metadata);
+    assert!(
+        matches!(result, Err(kaspa_consensus_core::errors::pruning::PruningImportError::PruningProofEmptyLevel(_))),
+        "expected PruningProofEmptyLevel, got {result:?}"
+    );
+
+    consensus.shutdown(wait_handles);
+}
