@@ -469,26 +469,10 @@ impl From<NetworkId> for Params {
 
 pub const MAINNET_PARAMS: Params = Params {
     dns_seeders: &[
-        // This DNS seeder is run by Denis Mashkevich
-        "mainnet-dnsseed-1.kaspanet.org",
-        // This DNS seeder is run by Denis Mashkevich
-        "mainnet-dnsseed-2.kaspanet.org",
-        // This DNS seeder is run by Georges Künzli
-        "seeder1.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder2.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder3.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder4.kaspad.net",
-        // This DNS seeder is run by Tim
-        "kaspadns.kaspacalc.net",
-        // This DNS seeder is run by supertypo
-        "n-mainnet.kaspa.ws",
-        // This DNS seeder is run by -gerri-
-        "dnsseeder-kaspa-mainnet.x-con.at",
-        // This DNS seeder is run by H@H
-        "ns-mainnet.kaspa-dnsseeder.net",
+        // Sedra DNS seeders (sedrad v2.0.0 params.go)
+        "sedra-seed-1.sedracoin.com",
+        "sedra-seed-2.sedracoin.com",
+        "sedra-seed-3.sedracoin.com",
     ],
     net: NetworkId::new(NetworkType::Mainnet),
     genesis: GENESIS,
@@ -498,7 +482,7 @@ pub const MAINNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -538,20 +522,11 @@ pub const MAINNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // Roughly 2025-05-05 1500 UTC
-    crescendo_activation: ForkActivation::new(110_165_000),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
 };
 
 pub const TESTNET_PARAMS: Params = Params {
-    dns_seeders: &[
-        // This DNS seeder is run by Tiram
-        "seeder1-testnet.kaspad.net",
-        // This DNS seeder is run by -gerri-
-        "dnsseeder-kaspa-testnet.x-con.at",
-        // This DNS seeder is run by H@H
-        "ns-testnet10.kaspa-dnsseeder.net",
-        // This DNS seeder is run by supertypo
-        "n-testnet-10.kaspa.ws",
-    ],
+    dns_seeders: &[], // Sedra has no testnet seeders
     net: NetworkId::with_suffix(NetworkType::Testnet, 10),
     genesis: TESTNET_GENESIS,
     prior_ghostdag_k: LEGACY_DEFAULT_GHOSTDAG_K,
@@ -560,7 +535,7 @@ pub const TESTNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -599,7 +574,7 @@ pub const TESTNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // 18:30 UTC, March 6, 2025
-    crescendo_activation: ForkActivation::new(88_657_000),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
 };
 
 pub const SIMNET_PARAMS: Params = Params {
@@ -610,7 +585,7 @@ pub const SIMNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
 
     //
     // ~~~~~~~~~~~~~~~~~~ BPS dependent constants ~~~~~~~~~~~~~~~~~~
@@ -648,7 +623,7 @@ pub const SIMNET_PARAMS: Params = Params {
     pruning_proof_m: PRUNING_PROOF_M,
 
     crescendo: CRESCENDO,
-    crescendo_activation: ForkActivation::always(),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
 };
 
 pub const DEVNET_PARAMS: Params = Params {
@@ -661,7 +636,7 @@ pub const DEVNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -701,5 +676,5 @@ pub const DEVNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // TODO: Set this to always after the fork
-    crescendo_activation: ForkActivation::never(),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
 };

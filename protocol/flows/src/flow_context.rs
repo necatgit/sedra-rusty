@@ -15,10 +15,7 @@ use kaspa_consensus_core::block::Block;
 use kaspa_consensus_core::config::Config;
 use kaspa_consensus_core::errors::block::RuleError;
 use kaspa_consensus_core::tx::{Transaction, TransactionId};
-use kaspa_consensus_core::{
-    api::{BlockValidationFuture, BlockValidationFutures},
-    network::NetworkType,
-};
+use kaspa_consensus_core::api::{BlockValidationFuture, BlockValidationFutures};
 use kaspa_consensus_notify::{
     notification::{Notification, PruningPointUtxoSetOverrideNotification},
     root::ConsensusNotificationRoot,
@@ -782,7 +779,8 @@ impl ConnectionInitializer for FlowContext {
         debug!("protocol versions - self: {}, peer: {}", PROTOCOL_VERSION, peer_version.protocol_version);
 
         // Register all flows according to version
-        let connect_only_new_versions = self.config.net.network_type() != NetworkType::Testnet;
+        // SEDRA: Sedra's Go nodes speak protocol v5 only, so older protocol versions stay enabled on every network.
+        let connect_only_new_versions = false;
 
         let (flows, applied_protocol_version) = if connect_only_new_versions {
             match peer_version.protocol_version {
