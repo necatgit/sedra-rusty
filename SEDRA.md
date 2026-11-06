@@ -62,6 +62,13 @@ back-port, upstream …)` in the code and covered by a `sedra_*` regression test
 | Storage mass division by zero (mempool) | `778b21e2` (part) | `consensus/core/src/mass/mod.rs` |
 | 2 MB cap on decoded P2P block messages | `2a47b249` (part) | `protocol/p2p/src/convert/block.rs`, `error.rs` |
 | Inbound handshakes: at most 32 pending (2 per IP), each in its own task instead of the hub loop | `2a47b249` (part) | `protocol/p2p/src/core/connection_handler.rs`, `hub.rs`, `router.rs`, `adaptor.rs` |
+| Trusted blocks must not be in the pruning point's future (pruning proof import) | `11ffbcc6` | `consensus/src/processes/pruning_proof/apply.rs`, `consensus/core/src/errors/pruning.rs` |
+| Pruning proof with an empty level: error instead of a panic (which exits the node) | `d6333234` (part) | `consensus/src/processes/pruning_proof/validate.rs`, `consensus/core/src/errors/pruning.rs` |
+
+Not taken from upstream: `48b63582` (every proof level not rooted at genesis must have a selected tip with blue score
+>= 2M). The real mainnet proof built by sedrad fails it (level 13: 2037 headers, blue score 1998 < 2000), so the Rust
+node could not sync from any Go node. Both pruning-proof changes above were tested with a fresh sync from a local sedrad
+on 2026-11-06.
 
 Not taken from upstream: lowering the overall P2P message limit from 1 GB to 256 MB. Protocol v5 sends the pruning
 point proof as one message, and Sedra's may be close to that size; to be measured first.
