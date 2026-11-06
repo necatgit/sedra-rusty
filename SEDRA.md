@@ -58,6 +58,10 @@ back-port, upstream …)` in the code and covered by a `sedra_*` regression test
 | Mempool output index (out of bounds) | `778b21e2` (part) | `mining/src/mempool/populate_entries_and_try_validate.rs`, `manager.rs`, `validate_and_insert_transaction.rs`, `mining/errors/src/mempool.rs` |
 | Mempool rejects coinbase transactions | `eb0a856d` | `mining/src/mempool/validate_and_insert_transaction.rs`, `mining/errors/src/mempool.rs` |
 | Address payload length (assertion) | `2a47b249` (part) | `crypto/addresses/src/lib.rs`, `crypto/addresses/src/bech32.rs` |
+| Block count estimate during sync (underflow) | `cea06453` | `consensus/src/consensus/mod.rs` |
+
+Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaining reachable from the network in the node
+as run with UPnP disabled) are on branch `deps-security` and will be merged after the M5 sync.
 
 Still open from the back-port list: the "should" and "optional" items in #29.
 
