@@ -67,7 +67,8 @@ Not taken from upstream: lowering the overall P2P message limit from 1 GB to 256
 point proof as one message, and Sedra's may be close to that size; to be measured first.
 
 Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaining reachable from the network in the node
-as run with UPnP disabled) are on branch `deps-security` and will be merged after the M5 sync.
+as run with UPnP disabled) were merged together with the hardening changes on 2026-11-06 (full test run: 517 passed,
+0 failed, 25 ignored).
 
 Still open from the back-port list: the "should" and "optional" items in #29.
 
