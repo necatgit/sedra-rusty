@@ -44,7 +44,12 @@ The one failure on both is `kaspa-perf-monitor::monitor_works`, a timing-depende
 Sedra genesis test. On the test VM (Ubuntu 26.04, GCC 15, own NVMe), M1 gives 112 suites, 500 passed, 0 failed,
 25 ignored: identical per suite, and `monitor_works` passes there.
 
-**Not yet done:** the v2.0.0 relaunch rules (difficulty reset and treasury outputs, milestone M6); the two hardcoded
+**v2.0.0 relaunch rules (M6):** `difficulty_reset_*` and `treasury_allocation_*` in `Params` (mainnet only),
+applied in `DualWindowManager::calculate_difficulty_bits` and `CoinbaseManager::expected_coinbase_transaction`.
+Tests in `consensus/src/processes/sedra_relaunch_rules_test.rs` (expected values from sedrad's own code) and
+`sedra_difficulty_reset_wiring_test` (running consensus).
+
+**Not yet done:** the two hardcoded
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
 removing Kaspa-specific RPC data (mainnet timestamp samples).
 
