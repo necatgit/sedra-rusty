@@ -269,6 +269,11 @@ impl Router {
         self.is_outbound
     }
 
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249): true once `close()` has run
+    pub(crate) fn is_closed(&self) -> bool {
+        self.mutable_state.lock().shutdown_signal.is_none()
+    }
+
     pub fn connection_started(&self) -> Instant {
         self.connection_started
     }
