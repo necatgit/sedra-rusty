@@ -1,6 +1,6 @@
 use kaspa_consensus_core::{
     coinbase::*,
-    config::params::ForkedParam,
+    config::params::{block_in_treasury_allocation_window, ForkedParam, TreasuryAllocationWindow},
     errors::coinbase::{CoinbaseError, CoinbaseResult},
     subnets,
     tx::{ScriptPublicKey, ScriptVec, Transaction, TransactionOutput},
@@ -41,6 +41,10 @@ pub struct CoinbaseManager {
     /// This score is required here long-term (and not only for the actual forking), in
     /// order to correctly determine the subsidy month from the live DAA score of the network   
     crescendo_activation_daa_score: u64,
+
+    /// SEDRA v2.0.0 treasury allocation (dormant when the windows or the script are empty)
+    treasury_allocation_windows: &'static [TreasuryAllocationWindow],
+    treasury_script_public_key: Option<ScriptPublicKey>,
 }
 
 /// Struct used to streamline payload parsing
@@ -85,7 +89,31 @@ impl CoinbaseManager {
             subsidy_by_month_table_before,
             subsidy_by_month_table_after,
             crescendo_activation_daa_score: bps.activation().daa_score(),
+            treasury_allocation_windows: &[],
+            treasury_script_public_key: None,
         }
+    }
+
+    /// SEDRA v2.0.0: enables the treasury allocation output (sedrad's `treasuryAllocationOutput`).
+    pub fn with_treasury_allocation(mut self, windows: &'static [TreasuryAllocationWindow], script_public_key: &'static [u8]) -> Self {
+        self.treasury_allocation_windows = windows;
+        self.treasury_script_public_key =
+            if script_public_key.is_empty() { None } else { Some(ScriptPublicKey::new(0, ScriptVec::from_slice(script_public_key))) };
+        self
+    }
+
+    /// SEDRA v2.0.0: sedrad's `treasuryAllocationOutput` for a block with the given DAA score. The first matching window
+    /// with a non-zero amount pays. Dormant when no window or no script is configured.
+    pub fn treasury_allocation_output(&self, daa_score: u64) -> Option<TransactionOutput> {
+        let spk = self.treasury_script_public_key.as_ref()?;
+        if self.treasury_allocation_windows.is_empty() {
+            return None;
+        }
+        self.treasury_allocation_windows
+            .iter()
+            .filter(|w| w.per_block_seep != 0)
+            .find(|w| block_in_treasury_allocation_window(daa_score, w.activation_daa_score, w.window_blocks))
+            .map(|w| TransactionOutput::new(w.per_block_seep, spk.clone()))
     }
 
     #[cfg(test)]
@@ -137,6 +165,11 @@ impl CoinbaseManager {
 
         if red_reward > 0 {
             outputs.push(TransactionOutput::new(red_reward, miner_data.script_public_key.clone()));
+        }
+
+        // SEDRA v2.0.0: the treasury allocation output comes after the blue and red reward outputs, as in sedrad
+        if let Some(treasury_output) = self.treasury_allocation_output(daa_score) {
+            outputs.push(treasury_output);
         }
 
         // Build the current block's payload

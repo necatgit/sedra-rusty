@@ -756,6 +756,10 @@ pub struct DualWindowManager<
     crescendo_activation: ForkActivation,
     full_window_manager: FullWindowManager<T, U, V>,
     sampled_window_manager: SampledWindowManager<T, U, V, W>,
+    // SEDRA v2.0.0 difficulty reset
+    genesis_bits: u32,
+    difficulty_reset_activation_daa_score: u64,
+    difficulty_reset_window_blocks: u64,
 }
 
 impl<T: GhostdagStoreReader, U: BlockWindowCacheReader + BlockWindowCacheWriter, V: HeaderStoreReader, W: DaaStoreReader>
@@ -780,6 +784,8 @@ impl<T: GhostdagStoreReader, U: BlockWindowCacheReader + BlockWindowCacheWriter,
         full_past_median_time_window_size: usize,
         sampled_past_median_time_window_size: usize,
         past_median_time_sample_rate: u64,
+        difficulty_reset_activation_daa_score: u64,
+        difficulty_reset_window_blocks: u64,
     ) -> Self {
         let full_window_manager = FullWindowManager::new(
             genesis,
@@ -810,7 +816,16 @@ impl<T: GhostdagStoreReader, U: BlockWindowCacheReader + BlockWindowCacheWriter,
             sampled_past_median_time_window_size,
             past_median_time_sample_rate,
         );
-        Self { ghostdag_store, headers_store, sampled_window_manager, full_window_manager, crescendo_activation }
+        Self {
+            ghostdag_store,
+            headers_store,
+            sampled_window_manager,
+            full_window_manager,
+            crescendo_activation,
+            genesis_bits: genesis.bits,
+            difficulty_reset_activation_daa_score,
+            difficulty_reset_window_blocks,
+        }
     }
 
     /// Checks whether sampling mode was activated based on the selected parent (internally checking its DAA score)
@@ -845,10 +860,18 @@ impl<T: GhostdagStoreReader, U: BlockWindowCacheReader + BlockWindowCacheWriter,
     }
 
     fn calculate_difficulty_bits(&self, ghostdag_data: &GhostdagData, daa_window: &DaaWindow) -> u32 {
-        match self.sampling(ghostdag_data.selected_parent) {
+        let bits = match self.sampling(ghostdag_data.selected_parent) {
             true => self.sampled_window_manager.calculate_difficulty_bits(ghostdag_data, daa_window),
             false => self.full_window_manager.calculate_difficulty_bits(ghostdag_data, daa_window),
-        }
+        };
+        // SEDRA v2.0.0: sedrad's applyDifficultyReset, applied after the normal calculation on the block's own DAA score
+        apply_difficulty_reset(
+            bits,
+            daa_window.daa_score,
+            self.difficulty_reset_activation_daa_score,
+            self.difficulty_reset_window_blocks,
+            self.genesis_bits,
+        )
     }
 
     fn calc_past_median_time(&self, ghostdag_data: &GhostdagData) -> Result<(u64, Arc<BlockWindowHeap>), RuleError> {
@@ -942,5 +965,18 @@ impl BoundedSizeBlockHeap {
         for _ in 0..self.binary_heap.len().saturating_sub(self.size_bound) {
             self.binary_heap.blocks.pop();
         }
+    }
+}
+
+/// SEDRA v2.0.0: sedrad's `applyDifficultyReset`. Returns the genesis bits for blocks inside the reset window,
+/// otherwise the computed bits unchanged. Dormant when either reset parameter is 0.
+pub fn apply_difficulty_reset(bits: u32, block_daa_score: u64, activation_daa_score: u64, window_blocks: u64, genesis_bits: u32) -> u32 {
+    if window_blocks == 0 || activation_daa_score == 0 {
+        return bits;
+    }
+    if kaspa_consensus_core::config::params::block_in_difficulty_reset_window(block_daa_score, activation_daa_score, window_blocks) {
+        genesis_bits
+    } else {
+        bits
     }
 }

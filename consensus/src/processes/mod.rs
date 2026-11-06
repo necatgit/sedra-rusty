@@ -16,3 +16,6 @@ pub mod window;
 
 #[cfg(test)]
 mod sedra_real_headers_test;
+
+#[cfg(test)]
+mod sedra_relaunch_rules_test;

@@ -847,6 +847,10 @@ impl KaspadGoParams {
             pruning_proof_m: self.PruningProofM,
             crescendo: CRESCENDO,
             crescendo_activation: ForkActivation::never(),
+            difficulty_reset_activation_daa_score: 0,
+            difficulty_reset_window_blocks: 0,
+            treasury_allocation_windows: &[],
+            treasury_script_public_key: &[],
         }
     }
 }
@@ -2201,4 +2205,55 @@ async fn runtime_sig_op_counting_test() {
     // Test 2: After activation, tx should be accepted as runtime counting only sees 1 executed sig op
     let status = consensus.add_utxo_valid_block_with_parents((index + 1).into(), vec![index.into()], vec![tx]).await;
     assert!(matches!(status, Ok(BlockStatus::StatusUTXOValid)));
+}
+
+/// SEDRA (M6): the v2.0.0 difficulty reset takes effect in the running consensus, for block building and validation.
+/// With a small difficulty window and blocks arriving faster than the target time, the difficulty rises. Inside the
+/// configured reset window every block must carry the genesis bits; before and after it the computed (harder) bits.
+/// Every block is also inserted through full validation, which recomputes the expected bits.
+#[tokio::test]
+async fn sedra_difficulty_reset_wiring_test() {
+    init_allocator_with_default_settings();
+    const WINDOW: usize = 90;
+    const RESET_START: u64 = 150;
+    const RESET_LEN: u64 = 10;
+    let config = ConfigBuilder::new(MAINNET_PARAMS)
+        .skip_proof_of_work()
+        .edit_consensus_params(|p| {
+            p.prior_ghostdag_k = 1;
+            p.prior_difficulty_window_size = WINDOW;
+            p.min_difficulty_window_size = WINDOW;
+            p.crescendo_activation = ForkActivation::never();
+            p.timestamp_deviation_tolerance = 60;
+            p.difficulty_reset_activation_daa_score = RESET_START;
+            p.difficulty_reset_window_blocks = RESET_LEN;
+        })
+        .build();
+    let genesis_bits = config.genesis.bits;
+    let consensus = TestConsensus::new(&config);
+    let wait_handles = consensus.init();
+
+    let mut tip = config.genesis.hash;
+    let mut bits_by_daa = std::collections::BTreeMap::new();
+    for _ in 0..(RESET_START + RESET_LEN + 20) {
+        let ghostdag_data = consensus.ghostdag_manager().ghostdag(&[tip]);
+        let pmt = consensus.window_manager().calc_past_median_time(&ghostdag_data).unwrap().0;
+        let mut header = consensus.build_header_with_parents(new_unique(), vec![tip]);
+        header.timestamp = pmt + 1; // faster than the target time, so the difficulty rises once the window is full
+        header.finalize();
+        consensus.validate_and_insert_block(Block::new(header.clone(), vec![])).virtual_state_task.await.unwrap();
+        bits_by_daa.insert(header.daa_score, header.bits);
+        tip = header.hash;
+    }
+
+    let harder = |bits: u32| Uint256::from_compact_target_bits(bits) < Uint256::from_compact_target_bits(genesis_bits);
+    let before = bits_by_daa[&(RESET_START - 1)];
+    let after = bits_by_daa[&(RESET_START + RESET_LEN)];
+    assert!(harder(before), "difficulty should have risen before the reset window (bits {before:#x})");
+    for daa in RESET_START..RESET_START + RESET_LEN {
+        assert_eq!(bits_by_daa[&daa], genesis_bits, "genesis bits expected inside the reset window at DAA score {daa}");
+    }
+    assert!(harder(after), "computed difficulty expected again after the reset window (bits {after:#x})");
+
+    consensus.shutdown(wait_handles);
 }
