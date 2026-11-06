@@ -33,10 +33,6 @@ pub enum PruningImportError {
     #[error("the proof doesn't have sufficient blue work in order to replace the current DAG")]
     PruningProofInsufficientBlueWork,
 
-    // SEDRA (security back-port, upstream 48b63582)
-    #[error("the pruning proof selected tip {0} at level {1} blue score {2} < 2M and root is not genesis")]
-    PruningProofSelectedTipNotEnoughBlueScore(Hash, BlockLevel, u64),
-
     // SEDRA (security back-port, upstream d6333234 part): an empty level used to reach an unwrap on None
     #[error("the pruning proof has no headers at level {0}")]
     PruningProofEmptyLevel(BlockLevel),

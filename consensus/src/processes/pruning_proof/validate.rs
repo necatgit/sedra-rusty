@@ -343,12 +343,9 @@ impl PruningProofManager {
                 return Err(PruningImportError::PruningProofMissesBlocksBelowPruningPoint(selected_tip.unwrap(), level));
             }
 
-            // SEDRA (security back-port, upstream 48b63582): a level that does not start at genesis must be a full level
-            let tip_blue_score = ghostdag_stores[level_idx].get_blue_score(selected_tip.unwrap()).unwrap();
-            let level_root = proof[level_idx].first().expect("checked above").hash;
-            if level_root != self.genesis_hash && tip_blue_score < 2 * self.pruning_proof_m {
-                return Err(PruningImportError::PruningProofSelectedTipNotEnoughBlueScore(selected_tip.unwrap(), level, tip_blue_score));
-            }
+            // SEDRA: upstream 48b63582 (a level not rooted at genesis must have a selected tip with blue score >= 2M) is
+            // deliberately NOT applied. Real proofs built by sedrad (Go) fail it: on mainnet, level 13 had 2037 headers but
+            // a selected-tip blue score of 1998, so the check would make syncing from any Go node impossible.
 
             selected_tip_by_level[level_idx] = selected_tip;
         }
