@@ -49,6 +49,18 @@ applied in `DualWindowManager::calculate_difficulty_bits` and `CoinbaseManager::
 Tests in `consensus/src/processes/sedra_relaunch_rules_test.rs` (expected values from sedrad's own code) and
 `sedra_difficulty_reset_wiring_test` (running consensus).
 
+**Security back-ports (#29, research/0006):** fixes from later rusty-kaspa releases, each marked `SEDRA (security
+back-port, upstream …)` in the code and covered by a `sedra_*` regression test that fails with the original code:
+
+| Area | Upstream commit | Files |
+|---|---|---|
+| P2P handshake time offset (overflow) | `2a47b249` (part) | `protocol/flows/src/flow_context.rs` |
+| Mempool output index (out of bounds) | `778b21e2` (part) | `mining/src/mempool/populate_entries_and_try_validate.rs`, `manager.rs`, `validate_and_insert_transaction.rs`, `mining/errors/src/mempool.rs` |
+| Mempool rejects coinbase transactions | `eb0a856d` | `mining/src/mempool/validate_and_insert_transaction.rs`, `mining/errors/src/mempool.rs` |
+| Address payload length (assertion) | `2a47b249` (part) | `crypto/addresses/src/lib.rs`, `crypto/addresses/src/bech32.rs` |
+
+Still open from the back-port list: the "should" and "optional" items in #29.
+
 **Not yet done:** the two hardcoded
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
 removing Kaspa-specific RPC data (mainnet timestamp samples).
