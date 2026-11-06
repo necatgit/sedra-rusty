@@ -668,14 +668,10 @@ impl ConsensusApi for Consensus {
         // PRUNE SAFETY: retention root is always a current or past pruning point which its header is kept permanently
         let retention_period_root_score = self.headers_store.get_daa_score(self.get_retention_period_root()).unwrap();
         let virtual_score = self.get_virtual_daa_score();
-        let header_count = self
-            .headers_store
-            .get_daa_score(self.get_headers_selected_tip())
-            .unwrap_option()
-            .unwrap_or(virtual_score)
-            .max(virtual_score)
-            - retention_period_root_score;
-        let block_count = virtual_score - retention_period_root_score;
+        let headers_selected_tip_score =
+            self.headers_store.get_daa_score(self.get_headers_selected_tip()).unwrap_option().unwrap_or(virtual_score);
+        let (header_count, block_count) =
+            block_count_estimate(headers_selected_tip_score, virtual_score, retention_period_root_score);
         BlockCount { header_count, block_count }
     }
 
@@ -1136,5 +1132,28 @@ impl ConsensusApi for Consensus {
 
     fn finality_point(&self) -> Hash {
         self.virtual_processor.virtual_finality_point(&self.lkg_virtual_state.load().ghostdag_data, self.pruning_point())
+    }
+}
+
+/// SEDRA (security back-port, upstream rusty-kaspa cea06453): during IBD the virtual DAA score can be below the retention
+/// period root's score (while the UTXO set is imported), so the counts must not underflow. The release build has
+/// overflow checks, and a panic ends the node; RPC calls such as GetBlockDagInfo reach this code during sync.
+fn block_count_estimate(headers_selected_tip_score: u64, virtual_score: u64, retention_period_root_score: u64) -> (u64, u64) {
+    let header_count = headers_selected_tip_score.max(virtual_score).saturating_sub(retention_period_root_score);
+    let block_count = virtual_score.saturating_sub(retention_period_root_score);
+    (header_count, block_count)
+}
+
+#[cfg(test)]
+mod sedra_backport_tests {
+    use super::block_count_estimate;
+
+    #[test]
+    fn block_count_estimate_does_not_underflow_during_ibd_test() {
+        // normal operation
+        assert_eq!(block_count_estimate(1_200, 1_100, 1_000), (200, 100));
+        // during IBD: virtual score still 0 while the retention root is already far ahead
+        assert_eq!(block_count_estimate(0, 0, 61_000_000), (0, 0));
+        assert_eq!(block_count_estimate(61_100_000, 0, 61_000_000), (100_000, 0));
     }
 }
