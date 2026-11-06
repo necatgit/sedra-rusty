@@ -1,4 +1,4 @@
-use crate::{common::ProtocolError, pb::KaspadMessage, ConnectionInitializer, Peer, Router};
+use crate::{common::ProtocolError, pb::KaspadMessage, Peer, Router};
 use kaspa_core::{debug, info, warn};
 use parking_lot::RwLock;
 use std::{
@@ -32,33 +32,28 @@ impl Hub {
 
     /// Starts a loop for receiving central hub events from all peer routers. This mechanism is used for
     /// managing a collection of active peers and for supporting a broadcast operation.
-    pub(crate) fn start_event_loop(self, mut hub_receiver: MpscReceiver<HubEvent>, initializer: Arc<dyn ConnectionInitializer>) {
+    pub(crate) fn start_event_loop(self, mut hub_receiver: MpscReceiver<HubEvent>) {
         tokio::spawn(async move {
             while let Some(new_event) = hub_receiver.recv().await {
                 match new_event {
                     HubEvent::NewPeer(new_router) => {
-                        // If peer is outbound then connection initialization was already performed as part of the connect logic
-                        if new_router.is_outbound() {
-                            info!("P2P Connected to outgoing peer {} (outbound: {})", new_router, self.peers_query(true) + 1);
-                            self.insert_new_router(new_router).await;
-                        } else {
-                            match initializer.initialize_connection(new_router.clone()).await {
-                                Ok(()) => {
-                                    info!("P2P Connected to incoming peer {} (inbound: {})", new_router, self.peers_query(false) + 1);
-                                    self.insert_new_router(new_router).await;
-                                }
-                                Err(err) => {
-                                    new_router.try_sending_reject_message(&err).await;
-                                    // Ignoring the new router
-                                    new_router.close().await;
-                                    if matches!(err, ProtocolError::LoopbackConnection(_) | ProtocolError::PeerAlreadyExists(_)) {
-                                        debug!("P2P, handshake failed for inbound peer {}: {}", new_router, err);
-                                    } else {
-                                        warn!("P2P, handshake failed for inbound peer {}: {}", new_router, err);
-                                    }
-                                }
-                            }
+                        // SEDRA (security back-port, upstream rusty-kaspa 2a47b249): connection initialization (the handshake)
+                        // has already been performed before the router reaches the hub, for outbound peers by the connect
+                        // logic and for inbound peers by a task of their own in the connection handler. The hub no longer
+                        // runs handshakes, so one slow peer cannot block all others.
+                        // PeerClosing may be handled before NewPeer, so avoid inserting a router that is already closed.
+                        if new_router.is_closed() {
+                            continue;
                         }
+                        let is_outbound = new_router.is_outbound();
+                        info!(
+                            "P2P Connected to {} peer {} ({}: {})",
+                            if is_outbound { "outgoing" } else { "incoming" },
+                            new_router,
+                            if is_outbound { "outbound" } else { "inbound" },
+                            self.peers_query(is_outbound) + 1
+                        );
+                        self.insert_new_router(new_router).await;
                     }
                     HubEvent::PeerClosing(router) => {
                         if let Occupied(entry) = self.peers.write().entry(router.key()) {

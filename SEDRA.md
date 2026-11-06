@@ -59,6 +59,12 @@ back-port, upstream …)` in the code and covered by a `sedra_*` regression test
 | Mempool rejects coinbase transactions | `eb0a856d` | `mining/src/mempool/validate_and_insert_transaction.rs`, `mining/errors/src/mempool.rs` |
 | Address payload length (assertion) | `2a47b249` (part) | `crypto/addresses/src/lib.rs`, `crypto/addresses/src/bech32.rs` |
 | Block count estimate during sync (underflow) | `cea06453` | `consensus/src/consensus/mod.rs` |
+| Storage mass division by zero (mempool) | `778b21e2` (part) | `consensus/core/src/mass/mod.rs` |
+| 2 MB cap on decoded P2P block messages | `2a47b249` (part) | `protocol/p2p/src/convert/block.rs`, `error.rs` |
+| Inbound handshakes: at most 32 pending (2 per IP), each in its own task instead of the hub loop | `2a47b249` (part) | `protocol/p2p/src/core/connection_handler.rs`, `hub.rs`, `router.rs`, `adaptor.rs` |
+
+Not taken from upstream: lowering the overall P2P message limit from 1 GB to 256 MB. Protocol v5 sends the pruning
+point proof as one message, and Sedra's may be close to that size; to be measured first.
 
 Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaining reachable from the network in the node
 as run with UPnP disabled) are on branch `deps-security` and will be merged after the M5 sync.
