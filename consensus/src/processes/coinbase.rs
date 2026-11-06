@@ -565,6 +565,27 @@ mod tests {
         assert_eq!(data2, deserialized_data);
     }
 
+    /// SEDRA (M2): subsidy parity with the Go node. The vectors were produced by sedrad v2.0.0's own
+    /// `coinbasemanager.CalcBlockSubsidy` with mainnet params (only the DAA score lookup was stubbed), for the first
+    /// blocks, the start of the deflationary phase, and one block before, at and after every month boundary up to
+    /// month 200, plus mid-month points and selected mainnet DAA scores. Generator: research archive of the project.
+    #[test]
+    fn sedra_subsidy_parity_with_go_test() {
+        let doc: serde_json::Value = serde_json::from_str(include_str!("testdata/sedrad_subsidy_vectors.json")).unwrap();
+        let params = MAINNET_PARAMS;
+        assert_eq!(doc["deflationary_phase_daa_score"].as_u64().unwrap(), params.deflationary_phase_daa_score);
+        assert_eq!(doc["pre_deflationary_phase_subsidy"].as_u64().unwrap(), params.pre_deflationary_phase_base_subsidy);
+        let cbm = create_manager(&params);
+        let vectors = doc["vectors"].as_array().unwrap();
+        assert_eq!(vectors.len(), 813);
+        for v in vectors {
+            let daa_score = v["daa_score"].as_u64().unwrap();
+            let expected = v["subsidy"].as_u64().unwrap();
+            assert_eq!(cbm.calc_block_subsidy(daa_score), expected, "calc_block_subsidy at DAA score {daa_score}");
+            assert_eq!(cbm.legacy_calc_block_subsidy(daa_score), expected, "legacy_calc_block_subsidy at DAA score {daa_score}");
+        }
+    }
+
     fn create_manager(params: &Params) -> CoinbaseManager {
         CoinbaseManager::new(
             params.coinbase_payload_script_public_key_max_len,
