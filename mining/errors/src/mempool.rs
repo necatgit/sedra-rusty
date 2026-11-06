@@ -47,6 +47,14 @@ pub enum RuleError {
     #[error("transaction {0} doesn't exist in transaction pool")]
     RejectMissingTransaction(TransactionId),
 
+    /// SEDRA (security back-port, upstream rusty-kaspa 778b21e2)
+    #[error("at least one outpoint of the transaction is impossible to have a matching UTXO entry")]
+    RejectImpossibleOutpoint,
+
+    /// SEDRA (security back-port, upstream rusty-kaspa eb0a856d)
+    #[error("coinbase transaction {0} cannot be added to the mempool")]
+    RejectCoinbase(TransactionId),
+
     #[error("orphan transaction size of {0} bytes is larger than max allowed size of {1} bytes")]
     RejectBadOrphanMass(u64, u64),
 

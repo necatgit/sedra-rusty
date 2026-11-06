@@ -138,6 +138,7 @@ impl Address {
         }
 
         let payload_u8 = conv5to8(payload_u5);
-        Ok(Self::new(prefix, payload_u8[0].try_into()?, payload_u8[1..].into()))
+        // SEDRA (security back-port, upstream rusty-kaspa 2a47b249): reject a wrong payload length instead of panicking
+        Self::try_new(prefix, payload_u8[0].try_into()?, &payload_u8[1..])
     }
 }

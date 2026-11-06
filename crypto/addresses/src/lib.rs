@@ -22,6 +22,10 @@ mod bech32;
 /// Error type produced by [`Address`] operations.
 #[derive(Error, PartialEq, Eq, Debug, Clone)]
 pub enum AddressError {
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249)
+    #[error("The address payload length is invalid: expected {expected} bytes, got {actual}")]
+    InvalidPayloadLength { expected: usize, actual: usize },
+
     #[error("The address has an invalid prefix {0}")]
     InvalidPrefix(String),
 
@@ -224,6 +228,16 @@ impl std::fmt::Debug for Address {
 }
 
 impl Address {
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249): like [`Self::new`], but returns an error instead of
+    /// panicking when the payload length does not match the version. Use it for any externally supplied address.
+    pub fn try_new(prefix: Prefix, version: Version, payload: &[u8]) -> Result<Self, AddressError> {
+        let expected = version.public_key_len();
+        if !prefix.is_test() && payload.len() != expected {
+            return Err(AddressError::InvalidPayloadLength { expected, actual: payload.len() });
+        }
+        Ok(Self { prefix, payload: PayloadVec::from_slice(payload), version })
+    }
+
     pub fn new(prefix: Prefix, version: Version, payload: &[u8]) -> Self {
         if !prefix.is_test() {
             assert_eq!(payload.len(), version.public_key_len());
@@ -303,7 +317,8 @@ impl BorshDeserialize for Address {
         let prefix: Prefix = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let version: Version = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let payload: Vec<u8> = borsh::BorshDeserialize::deserialize_reader(reader)?;
-        Ok(Self::new(prefix, version, &payload))
+        // SEDRA (security back-port, upstream 2a47b249)
+        Self::try_new(prefix, version, &payload).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string()))
     }
 }
 
@@ -601,6 +616,22 @@ mod tests {
             let address: Address = address_str.to_string().try_into().expect("Test failed");
             assert_eq!(address, expected_address);
         }
+    }
+
+    /// SEDRA (security back-port, upstream 2a47b249): a mainnet address with a valid checksum but the wrong payload
+    /// length must be rejected as an error, from a string and from Borsh, instead of crashing the node.
+    #[test]
+    fn sedra_wrong_payload_length_is_an_error_test() {
+        let bad = Address { prefix: Prefix::Mainnet, version: Version::PubKey, payload: PayloadVec::from_slice(&[7u8; 5]) };
+        let encoded: String = (&bad).into();
+        let parsed: Result<Address, AddressError> = encoded.as_str().try_into();
+        assert_eq!(parsed, Err(AddressError::InvalidPayloadLength { expected: 32, actual: 5 }), "{encoded}");
+        let bytes = borsh::to_vec(&bad).unwrap();
+        assert!(<Address as borsh::BorshDeserialize>::try_from_slice(&bytes).is_err());
+        // a correct address still parses
+        let good = Address::new(Prefix::Mainnet, Version::PubKey, &[7u8; 32]);
+        let good_str: String = (&good).into();
+        assert_eq!(Address::try_from(good_str.as_str()), Ok(good));
     }
 
     #[test]
