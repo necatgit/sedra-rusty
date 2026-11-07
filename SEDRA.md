@@ -77,7 +77,18 @@ Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaini
 as run with UPnP disabled) were merged together with the hardening changes on 2026-11-06 (full test run: 517 passed,
 0 failed, 25 ignored).
 
-Still open from the back-port list: the "should" and "optional" items in #29.
+Optional back-ports (branch `optional-backports`, to be merged after the M9 soak so the soak measures one version;
+full test suite 518 passed, 0 failed):
+
+| Fix | Upstream commit | Regression test |
+|---|---|---|
+| Connection manager: no panic on a wakeup during shutdown | `1fe3697b` | none (needs a shutdown race harness) |
+| File-descriptor budget for the UTXO index without i32 overflow | `8ae55970` | `sedra_utxo_index_fd_share_does_not_overflow` |
+| Refuse the pruning point anticone request while the pruning point is genesis | `d2901794` | `sedra_pruning_point_anticone_rejected_at_genesis_test` |
+| `GetBlocks` without duplicate hashes | `6a94fac3` | none (needs an RPC test node) |
+| Do not announce a block back to the peer that sent it (adapted to protocol v5) | `07941fa1` | none (needs a P2P harness) |
+
+Both regression tests fail with the original code.
 
 **Not yet done:** the two hardcoded
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
