@@ -2282,3 +2282,15 @@ async fn sedra_pruning_proof_empty_level_is_rejected_test() {
 
     consensus.shutdown(wait_handles);
 }
+
+/// SEDRA (back-port, upstream d2901794): a node whose pruning point is still genesis must refuse to serve the
+/// pruning point anticone / trusted data instead of building it from genesis.
+#[tokio::test]
+async fn sedra_pruning_point_anticone_rejected_at_genesis_test() {
+    init_allocator_with_default_settings();
+    let config = ConfigBuilder::new(MAINNET_PARAMS).skip_proof_of_work().build();
+    let consensus = TestConsensus::new(&config);
+    let wait_handles = consensus.init();
+    assert!(consensus.get_pruning_point_anticone_and_trusted_data().is_err(), "expected an error at genesis");
+    consensus.shutdown(wait_handles);
+}
