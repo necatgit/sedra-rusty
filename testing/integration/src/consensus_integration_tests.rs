@@ -2291,6 +2291,10 @@ async fn sedra_pruning_point_anticone_rejected_at_genesis_test() {
     let config = ConfigBuilder::new(MAINNET_PARAMS).skip_proof_of_work().build();
     let consensus = TestConsensus::new(&config);
     let wait_handles = consensus.init();
-    assert!(consensus.get_pruning_point_anticone_and_trusted_data().is_err(), "expected an error at genesis");
+    // The original code also fails here, but later and with a different error; the fix rejects the request up front.
+    match consensus.get_pruning_point_anticone_and_trusted_data() {
+        Err(e) => assert!(e.to_string().contains("pruning point is genesis"), "unexpected error: {e}"),
+        Ok(_) => panic!("expected an error at genesis"),
+    }
     consensus.shutdown(wait_handles);
 }
