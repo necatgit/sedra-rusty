@@ -35,7 +35,7 @@ repository before the first signed tag.
 
 ## Rebuild a release yourself
 
-Requirements: Linux x86_64, git, and Docker or Podman. About 20 minutes and 15 GB of disk on a 6-core machine.
+Requirements: Linux x86_64, git, and Docker or Podman. One build took about 5 minutes and 1.5 GB of disk on an 8-thread machine (measured natively; the container adds the image build and the dependency download).
 
 ```
 git clone <repository> sedra-rusty && cd sedra-rusty
@@ -59,6 +59,14 @@ runs `contrib/reproducible/build.sh` inside it, which:
 Running `contrib/reproducible/build.sh` directly on a host also works and is reproducible on that host, but the binary then
 depends on the host's C and C++ compilers (RocksDB and secp256k1 are C/C++ code), so its checksum will usually differ
 from the published one.
+
+## How far this has been tested
+
+- 2026-11-09, commit `f024e02a`: `build.sh` run directly on one host (Ubuntu 24.04, WSL) from two clones in different
+  directories, both checked out as a detached HEAD like a release tag: identical `SHA256SUMS` (archive `108a2966…`,
+  binary `98cf0e4f…`). This shows that build paths, timestamps and the clone do not reach the output.
+- The container route (`build-in-docker.sh`) is set up but has not been run yet. Until two different machines have
+  produced the same checksums with it, a match across machines is the goal, not a tested property.
 
 ## If your checksum differs
 
