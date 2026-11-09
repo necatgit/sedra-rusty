@@ -92,7 +92,7 @@ and the startup log show it with the upstream base and the commit, e.g. `0.1.0 (
 Releases are built reproducibly (`contrib/reproducible/`, pinned Rust image and Debian snapshot; `rust-toolchain.toml` pins
 rustc 1.99.1) and verified by rebuilding: see `docs/RELEASE.md`. The upstream release workflow
 (`.github/workflows/deploy.yaml`) is removed: it built unverifiable binaries under Kaspa's names on every GitHub release.
-The upstream README is kept as `docs/README-rusty-kaspa.md`.
+The upstream README is kept as `docs/README-rusty-kaspa.md`. `utils/build.rs` also embeds the commit when HEAD is detached (a checked-out release tag); upstream embedded none in that case.
 
 ## Building
 
