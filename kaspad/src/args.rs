@@ -3,7 +3,7 @@ use kaspa_consensus_core::{
     config::Config,
     network::{NetworkId, NetworkType},
 };
-use kaspa_core::kaspad_env::version;
+use kaspa_core::kaspad_env::sedra_version_string;
 use kaspa_notify::address::tracker::Tracker;
 use kaspa_utils::networking::ContextualNetAddress;
 use kaspa_wrpc_server::address::WrpcNetAddress;
@@ -199,8 +199,9 @@ pub fn cli() -> Command {
 
     #[allow(clippy::let_and_return)]
     let cmd = Command::new("kaspad")
-        .about(format!("{} (rusty-kaspa) v{}", env!("CARGO_PKG_DESCRIPTION"), version()))
-        .version(env!("CARGO_PKG_VERSION"))
+        // SEDRA: name the Sedra release, the upstream base and the commit (see SEDRA.md, "Releases")
+        .about(format!("Sedra full node (sedra-rusty) {}", sedra_version_string(kaspa_utils::git::short_hash_str())))
+        .version(&*Box::leak(sedra_version_string(kaspa_utils::git::short_hash_str()).into_boxed_str()))
         .arg(arg!(-C --configfile <CONFIG_FILE> "Path of config file."))
         .arg(arg!(-b --appdir <DATA_DIR> "Directory to store data."))
         .arg(arg!(--logdir <LOG_DIR> "Directory to log output."))

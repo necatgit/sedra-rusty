@@ -77,11 +77,22 @@ Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaini
 as run with UPnP disabled) were merged together with the hardening changes on 2026-11-06 (full test run: 517 passed,
 0 failed, 25 ignored).
 
-Still open from the back-port list: the "should" and "optional" items in #29.
+From the back-port list (#29), the must-fix and should items are merged; the optional items wait on branch `optional-backports` (tested) until the seven-day run (M9) has ended.
 
 **Not yet done:** the two hardcoded
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
 removing Kaspa-specific RPC data (mainnet timestamp samples).
+
+## Releases
+
+`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
+and the startup log show it with the upstream base and the commit, e.g. `0.1.0 (rusty-kaspa v1.0.1, commit
+9cb74efc1234)`. The P2P user agent stays the upstream `kaspad:1.0.1`, so the handshake with the Go nodes is unchanged.
+
+Releases are built reproducibly (`contrib/reproducible/`, pinned Rust image and Debian snapshot; `rust-toolchain.toml` pins
+rustc 1.99.1) and verified by rebuilding: see `docs/RELEASE.md`. The upstream release workflow
+(`.github/workflows/deploy.yaml`) is removed: it built unverifiable binaries under Kaspa's names on every GitHub release.
+The upstream README is kept as `docs/README-rusty-kaspa.md`.
 
 ## Building
 
