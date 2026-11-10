@@ -3,7 +3,7 @@
 This repository is a Sedra node built on [rusty-kaspa](https://github.com/kaspanet/rusty-kaspa) **v1.0.1**
 (`fcd9c28f`), the Rust node of Kaspa. Sedra's own node, `sedrad`, is a copy of Kaspa's Go node v0.12.15; this project
 moves Sedra to the Rust codebase. It is part of the
-[Sedra merged-mining project](https://github.com/necatgit/sedra-merged-mining); the reasoning is in its
+[Sedra merged-mining project](https://github.com/necatgit/sedra-merged-mining) (public from late November 2026); the reasoning is in its
 `research/0004-rust-path.md`.
 
 **Status: work in progress. Not for mainnet use.**
