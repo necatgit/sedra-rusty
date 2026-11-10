@@ -91,6 +91,9 @@ pub struct Args {
     pub disable_grpc: bool,
     pub ram_scale: f64,
     pub retention_period_days: Option<f64>,
+    /// SEDRA (M10): DAA score from which merged mining is active, devnet only (local end-to-end tests with pool
+    /// software). Mainnet and testnet take the activation from the consensus parameters only.
+    pub devnet_aux_pow_activation: Option<u64>,
 }
 
 impl Default for Args {
@@ -142,6 +145,7 @@ impl Default for Args {
             disable_grpc: false,
             ram_scale: 1.0,
             retention_period_days: None,
+            devnet_aux_pow_activation: None,
         }
     }
 }
@@ -162,6 +166,12 @@ impl Args {
         config.externalip = self.externalip.map(|v| v.normalize(config.default_p2p_port()));
         config.ram_scale = self.ram_scale;
         config.retention_period_days = self.retention_period_days;
+
+        // SEDRA (M10): parse() rejects the flag on every other network
+        if let Some(daa_score) = self.devnet_aux_pow_activation {
+            assert!(self.devnet, "--devnet-aux-pow-activation is allowed only on devnet");
+            config.params.aux_pow_activation = kaspa_consensus_core::config::params::ForkActivation::new(daa_score);
+        }
 
         #[cfg(feature = "devnet-prealloc")]
         if let Some(num_prealloc_utxos) = self.num_prealloc_utxos {
@@ -380,6 +390,13 @@ a large RAM (~64GB) can set this value to ~3.0-4.0 and gain superior performance
                 .value_parser(clap::value_parser!(f64))
                 .help("The number of total days of data to keep.")
         )
+        .arg(
+            Arg::new("devnet-aux-pow-activation")
+                .long("devnet-aux-pow-activation")
+                .require_equals(true)
+                .value_parser(clap::value_parser!(u64))
+                .help("SEDRA: DAA score from which merged mining (SIP-0001) is active. Devnet only, for local tests.")
+        )
         ;
 
     #[cfg(feature = "devnet-prealloc")]
@@ -460,6 +477,7 @@ impl Args {
             disable_grpc: arg_match_unwrap_or::<bool>(&m, "nogrpc", defaults.disable_grpc),
             ram_scale: arg_match_unwrap_or::<f64>(&m, "ram-scale", defaults.ram_scale),
             retention_period_days: m.get_one::<f64>("retention-period-days").cloned().or(defaults.retention_period_days),
+            devnet_aux_pow_activation: m.get_one::<u64>("devnet-aux-pow-activation").cloned().or(defaults.devnet_aux_pow_activation),
 
             #[cfg(feature = "devnet-prealloc")]
             num_prealloc_utxos: m.get_one::<u64>("num-prealloc-utxos").cloned(),
@@ -468,6 +486,13 @@ impl Args {
             #[cfg(feature = "devnet-prealloc")]
             prealloc_amount: arg_match_unwrap_or::<u64>(&m, "prealloc-amount", defaults.prealloc_amount),
         };
+
+        if args.devnet_aux_pow_activation.is_some() && !args.devnet {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                "--devnet-aux-pow-activation is allowed only together with --devnet\n",
+            ));
+        }
 
         if arg_match_unwrap_or::<bool>(&m, "enable-mainnet-mining", false) {
             println!("\nNOTE: The flag --enable-mainnet-mining is deprecated and defaults to true also w/o explicit setting\n")
@@ -573,3 +598,32 @@ fn arg_match_many_unwrap_or<T: Clone + Send + Sync + 'static>(m: &clap::ArgMatch
   -s, --service=                            Service command {install, remove, start, stop}
       --nogrpc                              Don't initialize the gRPC server
 */
+
+#[cfg(test)]
+mod sedra_aux_pow_flag_tests {
+    use super::*;
+    use kaspa_consensus_core::config::params::ForkActivation;
+
+    #[test]
+    fn devnet_aux_pow_activation_only_on_devnet() {
+        let args = Args::parse(["kaspad", "--devnet", "--devnet-aux-pow-activation=5"]).unwrap();
+        assert_eq!(args.devnet_aux_pow_activation, Some(5));
+        let mut config = kaspa_consensus_core::config::Config::new(kaspa_consensus_core::config::params::DEVNET_PARAMS);
+        args.apply_to_config(&mut config);
+        assert_eq!(config.params.aux_pow_activation, ForkActivation::new(5));
+
+        // mainnet, testnet and simnet refuse it
+        for net in [None, Some("--testnet"), Some("--simnet")] {
+            let mut argv = vec!["kaspad"];
+            argv.extend(net);
+            argv.push("--devnet-aux-pow-activation=5");
+            assert!(Args::parse(argv).is_err(), "{net:?}");
+        }
+
+        // without the flag nothing changes
+        let args = Args::parse(["kaspad", "--devnet"]).unwrap();
+        let mut config = kaspa_consensus_core::config::Config::new(kaspa_consensus_core::config::params::DEVNET_PARAMS);
+        args.apply_to_config(&mut config);
+        assert_eq!(config.params.aux_pow_activation, ForkActivation::never());
+    }
+}
