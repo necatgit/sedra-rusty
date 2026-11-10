@@ -79,8 +79,11 @@ from the published one.
 - 2026-11-09, commit `f024e02a`: `build.sh` run directly on one host (Ubuntu 24.04, WSL) from two clones in different
   directories, both checked out as a detached HEAD like a release tag: identical `SHA256SUMS` (archive `108a2966…`,
   binary `98cf0e4f…`). This shows that build paths, timestamps and the clone do not reach the output.
-- The container route (`build-in-docker.sh`) is set up but has not been run yet. Until two different machines have
-  produced the same checksums with it, a match across machines is the goal, not a tested property.
+- 2026-11-10, commit `527b4ca5` (branch `release-0.1.0`): the container route `build-in-docker.sh` with rootless
+  Podman 4.9.3 on the dev box (WSL), from a fresh clone at a detached HEAD: build 5 min, archive `94e80d7e…`, binary
+  `ec71ba49…`, `kaspad --version` = `0.1.0 (rusty-kaspa v1.0.1, commit 527b4ca537e7)`. Two fixes were needed for
+  Podman: a fully qualified base image name and `--userns=keep-id`. The same build on a second machine is still to
+  be run; until it matches, a match across machines is the goal, not a tested property.
 
 ## If your checksum differs
 
