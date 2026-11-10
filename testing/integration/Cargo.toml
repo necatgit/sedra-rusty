@@ -30,6 +30,7 @@ kaspa-merkle.workspace = true
 kaspa-muhash.workspace = true
 kaspa-notify.workspace = true
 kaspa-pow.workspace = true
+kaspa-p2p-lib.workspace = true
 kaspa-rpc-core.workspace = true
 kaspa-rpc-service.workspace = true
 kaspa-txscript.workspace = true

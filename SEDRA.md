@@ -143,6 +143,15 @@ with the proof is accepted (the header store keeps it); a proof for another bloc
 is ignored and the ban is off; the ban rejects a natively valid block after its start; pruning-proof levels follow the
 parent's work after activation only.
 
+**Fuzzing and two-node test (M10 step 5a/5b).** Deterministic fuzz tests (no new dependencies) drive mutated and
+random proofs through the decoder, the structural and binding checks, the PoW gate and the P2P and RPC conversions: no
+panic, P2P never rejects a header, RPC answers ok or error. The only freedom fuzzing found is the parent header cached
+hash field, which no rule reads; both decode edges now replace it with the recomputed hash. 
+: node A (simnet, real PoW, small pruning depths) mines 240 valid blocks, every second one
+merged-mined; node B accepts all of them through the P2P header conversion; a fresh node validates A's pruning proof
+(319 merged-mined headers in 9 levels); a node without merged mining rejects the merged-mined block and the proof
+(, the ZKas sync bug class).
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
