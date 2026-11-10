@@ -130,6 +130,10 @@ pub enum RuleError {
     #[error("block has invalid proof-of-work")]
     InvalidPoW,
 
+    /// SEDRA (M10): SIP-0001 §4.5, a Sedra block cannot be the merged-mining parent of another Sedra block.
+    #[error("coinbase carries a merged-mining (SDM1) commitment")]
+    CoinbaseCarriesMergeMiningCommitment,
+
     #[error("expected header pruning point is {0} but got {1}")]
     WrongHeaderPruningPoint(Hash, Hash),
 

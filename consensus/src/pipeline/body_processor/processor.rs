@@ -90,6 +90,7 @@ pub struct BlockBodyProcessor {
 
     /// Storage mass hardfork DAA score
     pub(crate) crescendo_activation: ForkActivation,
+    pub(crate) coinbase_commitment_ban_activation: ForkActivation,
 }
 
 impl BlockBodyProcessor {
@@ -134,6 +135,7 @@ impl BlockBodyProcessor {
             notification_root,
             counters,
             crescendo_activation: params.crescendo_activation,
+            coinbase_commitment_ban_activation: params.coinbase_commitment_ban_activation(),
         }
     }
 

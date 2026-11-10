@@ -100,6 +100,15 @@ impl BlockBodyProcessor {
                     return Err(RuleError::WrongSubsidy(expected_subsidy, data.subsidy));
                 }
 
+                // SEDRA (M10): self-parent ban (SIP-0001 §4.5), from 2 * finality_depth before merged mining
+                // activates. Same scanner as the parent check, so the two rules cannot drift apart. Other chains'
+                // tags (ZKas's ZKM1) stay allowed.
+                if self.coinbase_commitment_ban_activation.is_active(block.header.daa_score)
+                    && kaspa_consensus_core::auxpow::AuxPow::payload_carries_commitment(&block.transactions[0].payload)
+                {
+                    return Err(RuleError::CoinbaseCarriesMergeMiningCommitment);
+                }
+
                 Ok(())
             }
             Err(e) => Err(RuleError::BadCoinbasePayload(e)),

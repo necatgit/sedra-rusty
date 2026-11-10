@@ -128,6 +128,7 @@ pub struct HeaderProcessor {
     pub(super) skip_proof_of_work: bool,
     pub(super) max_block_level: BlockLevel,
     pub(super) crescendo_activation: ForkActivation,
+    pub(super) aux_pow_activation: ForkActivation,
 
     // DB
     db: Arc<DB>,
@@ -215,6 +216,7 @@ impl HeaderProcessor {
             skip_proof_of_work: params.skip_proof_of_work,
             max_block_level: params.max_block_level,
             crescendo_activation: params.crescendo_activation,
+            aux_pow_activation: params.aux_pow_activation,
         }
     }
 

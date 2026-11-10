@@ -188,6 +188,7 @@ impl ConsensusServices {
             window_manager.clone(),
             params.max_block_level,
             params.genesis.hash,
+            params.aux_pow_activation,
             params.pruning_proof_m,
             params.anticone_finalization_depth(),
             params.ghostdag_k(),

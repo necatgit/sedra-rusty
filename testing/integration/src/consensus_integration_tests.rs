@@ -847,6 +847,7 @@ impl KaspadGoParams {
             pruning_proof_m: self.PruningProofM,
             crescendo: CRESCENDO,
             crescendo_activation: ForkActivation::never(),
+            aux_pow_activation: ForkActivation::never(),
             difficulty_reset_activation_daa_score: 0,
             difficulty_reset_window_blocks: 0,
             treasury_allocation_windows: &[],

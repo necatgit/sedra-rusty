@@ -82,6 +82,15 @@ impl ForkActivation {
         current_daa_score >= self.0
     }
 
+    /// SEDRA (M10): the same activation `blocks` DAA score earlier. Never stays never; saturates at always.
+    pub fn early_by(self, blocks: u64) -> Self {
+        if self.0 == Self::NEVER {
+            self
+        } else {
+            Self(self.0.saturating_sub(blocks))
+        }
+    }
+
     /// Checks if the fork was "recently" activated, i.e., in the time frame of the provided range.
     /// This function returns false for forks that were always active, since they were never activated.
     pub fn is_within_range_from_activation(self, current_daa_score: u64, range: u64) -> bool {
@@ -295,6 +304,9 @@ pub struct Params {
 
     pub crescendo: CrescendoParams,
     pub crescendo_activation: ForkActivation,
+    /// SEDRA (M10): from this DAA score on, a block may meet its proof of work through a merged-mining proof
+    /// (SIP-0001 §4.4). Not scheduled on any network yet; chosen jointly with the Sedra team after a public testnet.
+    pub aux_pow_activation: ForkActivation,
 
     /// SEDRA v2.0.0 fair-restart difficulty reset: blocks with DAA score in
     /// `[difficulty_reset_activation_daa_score, + difficulty_reset_window_blocks)` require the genesis bits.
@@ -324,6 +336,16 @@ impl Params {
     /// Returns the size of the blocks window that is inspected to calculate the past median time.
     #[inline]
     #[must_use]
+    /// SEDRA (M10): from which DAA score a Sedra coinbase may carry no `SDM1` commitment (SIP-0001 §4.5):
+    /// `2 * finality_depth` before merged mining activates (decided 2026-11-10, as in ZKas). Starting at activation
+    /// left a gap: a block A just before activation could carry the commitment of a block B after it and be mined
+    /// natively, and B then used A as its "Kaspa parent" (the parent's network is not checked), so one solution paid
+    /// twice. A post-activation block can only merge blocks in the future of its finality point, which lies fewer
+    /// than `2 * finality_depth` DAA below it, so every A that may still carry a commitment is out of reach.
+    pub fn coinbase_commitment_ban_activation(&self) -> ForkActivation {
+        self.aux_pow_activation.early_by(2 * self.finality_depth().upper_bound())
+    }
+
     pub fn past_median_time_window_size(&self) -> ForkedParam<usize> {
         ForkedParam::new(
             self.prior_past_median_time_window_size(),
@@ -572,6 +594,7 @@ pub const MAINNET_PARAMS: Params = Params {
     crescendo: CRESCENDO,
     // Roughly 2025-05-05 1500 UTC
     crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    aux_pow_activation: ForkActivation::never(), // SEDRA (M10): merged mining not scheduled
     // SEDRA v2.0.0 relaunch rules, exactly as in sedrad v2.0.0 params.go
     difficulty_reset_activation_daa_score: 53_625_512,
     difficulty_reset_window_blocks: 2641,
@@ -629,6 +652,7 @@ pub const TESTNET_PARAMS: Params = Params {
     crescendo: CRESCENDO,
     // 18:30 UTC, March 6, 2025
     crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    aux_pow_activation: ForkActivation::never(), // SEDRA (M10): merged mining not scheduled
     difficulty_reset_activation_daa_score: 0,
     difficulty_reset_window_blocks: 0,
     treasury_allocation_windows: &[],
@@ -682,6 +706,7 @@ pub const SIMNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    aux_pow_activation: ForkActivation::never(), // SEDRA (M10): merged mining not scheduled
     difficulty_reset_activation_daa_score: 0,
     difficulty_reset_window_blocks: 0,
     treasury_allocation_windows: &[],
@@ -739,6 +764,7 @@ pub const DEVNET_PARAMS: Params = Params {
     crescendo: CRESCENDO,
     // TODO: Set this to always after the fork
     crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    aux_pow_activation: ForkActivation::never(), // SEDRA (M10): merged mining not scheduled
     difficulty_reset_activation_daa_score: 0,
     difficulty_reset_window_blocks: 0,
     treasury_allocation_windows: &[],

@@ -238,6 +238,11 @@ impl TestConsensus {
         self.consensus.processing_counters()
     }
 
+    /// SEDRA (M10): for tests of the pruning-proof level derivation.
+    pub fn pruning_proof_manager(&self) -> &Arc<crate::processes::pruning_proof::PruningProofManager> {
+        &self.consensus.services.pruning_proof_manager
+    }
+
     pub fn block_body_processor(&self) -> &Arc<BlockBodyProcessor> {
         &self.consensus.body_processor
     }

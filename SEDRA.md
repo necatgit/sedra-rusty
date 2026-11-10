@@ -123,7 +123,7 @@ native first, gate, level from the parent, binding) fails them. Not yet wired in
 does not depend on how the block was mined and a peer can strip the proof without changing the block's identity. A
 proof whose parent carries a proof is rejected (`NestedProof`). The header's memory estimate counts the proof. The header
 store format changed, so the DB version is now **5**: an older Rust-node database is deleted after confirmation (or
-`--yes`) and the node resyncs; the old 3-to-4 soft upgrade no longer applies. The gate is not wired in yet (step 4c).
+`--yes`) and the node resyncs; the old 3-to-4 soft upgrade no longer applies.
 
 **Transport (M10 step 4b).** P2P: `BlockHeader.auxPow` (bytes, field 15 as in ZKas; older nodes ignore it). An unusable
 proof from a peer (too large, undecodable, nested, branch too long) is dropped and the header kept, so a relay cannot
@@ -131,6 +131,17 @@ kill a natively valid block or a sync batch; a block that needed the proof then 
 invalid. RPC: the mining header `RpcRawHeader.auxPow` (hex, gRPC field 16 as in ZKas, wRPC format 2 with format 1 still
 accepted, JSON may omit it) so a pool submits a merged-mined block through the normal `submitBlock`; a bad proof there is
 an error the pool sees. The query header (`getBlock`) carries no proof, as in ZKas.
+
+**Activation and wiring (M10 step 4c).** `Params::aux_pow_activation` (DAA score; `never` on every network until the
+score is agreed with the Sedra team after a public testnet). Header validation runs `check_pow_gated` with the header's
+claimed DAA score; pruning-proof build, apply and validate derive levels through the same gate (§4.7). Self-parent ban
+(§4.5): from `coinbase_commitment_ban_activation()` = activation minus `2 * finality_depth` (about 2 days on mainnet,
+decided 2026-11-10 as in ZKas) a coinbase with an `SDM1` commitment is invalid
+(`CoinbaseCarriesMergeMiningCommitment`), so Go nodes must be replaced before the ban starts, not at activation.
+Consensus tests on simnet with real PoW: a stripped proof fails PoW without blacklisting the block and the same block
+with the proof is accepted (the header store keeps it); a proof for another block fails; before activation the proof
+is ignored and the ban is off; the ban rejects a natively valid block after its start; pruning-proof levels follow the
+parent's work after activation only.
 
 ## Releases
 

@@ -14,7 +14,7 @@ use kaspa_consensus_core::{
 use kaspa_core::info;
 use kaspa_database::prelude::{CachePolicy, ConnBuilder, StoreResultEmptyTuple, StoreResultExtensions};
 use kaspa_hashes::Hash;
-use kaspa_pow::{calc_block_level, calc_block_level_check_pow};
+use kaspa_pow::auxpow::calc_block_level_check_pow_gated;
 use kaspa_utils::vec::VecExtensions;
 use parking_lot::lock_api::RwLock;
 use rocksdb::WriteBatch;
@@ -50,7 +50,7 @@ impl PruningProofManager {
         let mut proof_stores_and_processes = self.init_validate_pruning_point_proof_stores_and_processes(proof)?;
         let proof_pp_header = proof[0].last().expect("checked if empty");
         let proof_pp = proof_pp_header.hash;
-        let proof_pp_level = calc_block_level(proof_pp_header, self.max_block_level);
+        let proof_pp_level = self.calc_block_level(proof_pp_header);
         let proof_selected_tip_by_level =
             self.populate_stores_for_validate_pruning_point_proof(proof, &mut proof_stores_and_processes, true)?;
         let proof_ghostdag_stores = proof_stores_and_processes.ghostdag_stores;
@@ -265,7 +265,7 @@ impl PruningProofManager {
             }
             let mut selected_tip = None;
             for (i, header) in proof[level as usize].iter().enumerate() {
-                let (header_level, pow_passes) = calc_block_level_check_pow(header, self.max_block_level);
+                let (header_level, pow_passes) = calc_block_level_check_pow_gated(header, self.max_block_level, header.aux_pow.as_deref(), self.aux_rule(header));
                 if header_level < level {
                     return Err(PruningImportError::PruningProofWrongBlockLevel(header.hash, header_level, level));
                 }

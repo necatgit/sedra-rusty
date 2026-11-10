@@ -28,8 +28,9 @@ use kaspa_consensus_core::{
 };
 use kaspa_core::info;
 use kaspa_database::{prelude::StoreResultExtensions, utils::DbLifetime};
+use kaspa_consensus_core::config::params::ForkActivation;
 use kaspa_hashes::Hash;
-use kaspa_pow::calc_block_level;
+use kaspa_pow::auxpow::{calc_block_level_check_pow_gated, AuxRule};
 use thiserror::Error;
 
 use crate::{
@@ -126,6 +127,7 @@ pub struct PruningProofManager {
 
     max_block_level: BlockLevel,
     genesis_hash: Hash,
+    aux_pow_activation: ForkActivation,
     pruning_proof_m: u64,
     anticone_finalization_depth: ForkedParam<u64>,
     ghostdag_k: ForkedParam<KType>,
@@ -134,6 +136,17 @@ pub struct PruningProofManager {
 }
 
 impl PruningProofManager {
+    /// SEDRA (M10): the merged-mining rule for a header (SIP-0001 §4.7: pruning-proof levels use the same dual rule).
+    fn aux_rule(&self, header: &Header) -> AuxRule {
+        AuxRule::new(self.aux_pow_activation.is_active(header.daa_score), self.genesis_hash)
+    }
+
+    /// SEDRA (M10): block level as at acceptance: from the parent's work for a merged-mined block. The native-only
+    /// calculation would give such a block a far lower level and reject valid proofs.
+    pub(crate) fn calc_block_level(&self, header: &Header) -> BlockLevel {
+        calc_block_level_check_pow_gated(header, self.max_block_level, header.aux_pow.as_deref(), self.aux_rule(header)).0
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: Arc<DB>,
@@ -145,6 +158,7 @@ impl PruningProofManager {
         window_manager: DbWindowManager,
         max_block_level: BlockLevel,
         genesis_hash: Hash,
+        aux_pow_activation: ForkActivation,
         pruning_proof_m: u64,
         anticone_finalization_depth: ForkedParam<u64>,
         ghostdag_k: ForkedParam<KType>,
@@ -176,6 +190,7 @@ impl PruningProofManager {
 
             max_block_level,
             genesis_hash,
+            aux_pow_activation,
             pruning_proof_m,
             anticone_finalization_depth,
             ghostdag_k,
@@ -214,7 +229,7 @@ impl PruningProofManager {
                 continue;
             }
 
-            let block_level = calc_block_level(header, self.max_block_level);
+            let block_level = self.calc_block_level(header);
             self.headers_store.insert(header.hash, header.clone(), block_level).unwrap();
         }
 

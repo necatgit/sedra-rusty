@@ -9,7 +9,10 @@ use kaspa_consensus_core::header::Header;
 use kaspa_consensus_core::BlockLevel;
 use kaspa_core::time::unix_now;
 use kaspa_database::prelude::StoreResultExtensions;
-use kaspa_pow::calc_level_from_pow;
+use kaspa_pow::{
+    auxpow::{check_pow_gated, AuxRule},
+    calc_level_from_pow,
+};
 
 impl HeaderProcessor {
     /// Validates the header in isolation including pow check against header declared bits.
@@ -102,10 +105,19 @@ impl HeaderProcessor {
     }
 
     fn check_pow_and_calc_block_level(&self, header: &Header) -> BlockProcessResult<BlockLevel> {
-        let state = kaspa_pow::State::new(header);
-        let (passed, pow) = state.check_pow(header.nonce);
-        if passed || self.skip_proof_of_work {
-            Ok(calc_level_from_pow(pow, self.max_block_level))
+        if self.skip_proof_of_work {
+            let (_, pow) = kaspa_pow::State::new(header).check_pow(header.nonce);
+            return Ok(calc_level_from_pow(pow, self.max_block_level));
+        }
+        // SEDRA (M10): dual acceptance (SIP-0001 §4.4). Native first; after activation a valid merged-mining proof
+        // also passes, and the block level then comes from the parent's work. The gate uses the header's own claimed
+        // DAA score, like the other header-stage fork gates; that score is checked in context later, so a block
+        // cannot unlock the proof path early by lying about it. A PoW failure is not cached as invalid, so a block
+        // whose proof was stripped in transit can still arrive with it.
+        let rule = AuxRule::new(self.aux_pow_activation.is_active(header.daa_score), self.genesis.hash);
+        let check = check_pow_gated(header, header.aux_pow.as_deref(), rule);
+        if check.passed() {
+            Ok(calc_level_from_pow(check.pow(), self.max_block_level))
         } else {
             Err(RuleError::InvalidPoW)
         }
