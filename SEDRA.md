@@ -158,7 +158,9 @@ nodes, two upstream Kaspa devnet nodes as the parent, the pool software Miningco
 locally: 401 of 401 merged-mined blocks accepted, relayed to the second node, credited to the miner's Sedra address
 (harness: `tools/e2e-merged-mining/` in the project repository).
 
-Not tested yet: the Go wallet daemon `sedrawallet` against this node (pools and services pay out through it).
+Wallets: the Go wallet daemon `sedrawallet` from sedrad v2.0.0 works against this node (tested 2026-11-10 on a
+local devnet: balance, CLI send, and the daemon's `Send` as pool software pays out; amounts and fees exact). Start
+the node with `--utxoindex` and point the wallet's `--rpcserver` at it; the wallet itself stays unchanged.
 
 ## Releases
 
