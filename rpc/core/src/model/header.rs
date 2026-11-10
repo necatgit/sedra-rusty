@@ -368,8 +368,10 @@ fn attach_aux_pow(header: Header, aux_pow_hex: &str) -> RpcResult<Header> {
         return Err(RpcError::General(format!("auxPow too large: {} hex chars", aux_pow_hex.len())));
     }
     let bytes = Vec::<u8>::from_rpc_hex(aux_pow_hex).map_err(|e| RpcError::General(format!("invalid auxPow hex: {e}")))?;
-    let aux: AuxPow = borsh::from_slice(&bytes).map_err(|e| RpcError::General(format!("invalid auxPow bytes: {e}")))?;
+    let mut aux: AuxPow = borsh::from_slice(&bytes).map_err(|e| RpcError::General(format!("invalid auxPow bytes: {e}")))?;
     aux.validate_structure().map_err(|reason| RpcError::General(format!("invalid auxPow: {reason}")))?;
+    // canonical form: the parent's cached hash is the only byte range no rule reads
+    aux.parent_header.finalize();
     Ok(header.with_aux_pow(aux))
 }
 
@@ -414,6 +416,84 @@ mod sedra_aux_tests {
         let native = RpcRawHeader::from(&sample_header());
         assert!(native.aux_pow.is_empty());
         assert!(Header::try_from(native).unwrap().aux_pow.is_none());
+    }
+
+
+    /// Small deterministic PRNG (xorshift64*) so every fuzz run is reproducible without extra dependencies.
+    struct FuzzRng(u64);
+
+    impl FuzzRng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n.max(1) as u64) as usize
+        }
+
+        /// A mutation of `valid`: flipped bytes, a cut, a random 4-byte window (length prefixes), an insertion, or noise.
+        fn mutate(&mut self, valid: &[u8], round: usize) -> Vec<u8> {
+            let mut bytes = valid.to_vec();
+            match round % 5 {
+                0 => {
+                    for _ in 0..1 + self.below(8) {
+                        let i = self.below(bytes.len());
+                        bytes[i] ^= 1 << self.below(8);
+                    }
+                }
+                1 => bytes.truncate(self.below(bytes.len())),
+                2 => {
+                    let i = self.below(bytes.len().saturating_sub(4));
+                    bytes[i..i + 4].copy_from_slice(&(self.next() as u32).to_le_bytes());
+                }
+                3 => {
+                    let i = self.below(bytes.len());
+                    let extra: Vec<u8> = (0..1 + self.below(64)).map(|_| self.next() as u8).collect();
+                    bytes.splice(i..i, extra);
+                }
+                _ => bytes = (0..self.below(600)).map(|_| self.next() as u8).collect(),
+            }
+            bytes
+        }
+    }
+    
+    #[test]
+    fn sedra_rpc_aux_pow_cached_hash_is_normalized() {
+        let mut aux = sample_aux();
+        let real = aux.parent_header.hash;
+        aux.parent_header.hash = 99.into();
+        let mut raw = RpcRawHeader::from(&sample_header());
+        raw.aux_pow = borsh::to_vec(&aux).unwrap().to_rpc_hex();
+        assert_eq!(Header::try_from(raw).unwrap().aux_pow.unwrap().parent_header.hash, real);
+    }
+
+    #[test]
+    fn sedra_rpc_aux_pow_fuzz_test() {
+        let valid = borsh::to_vec(&sample_aux()).unwrap();
+        let mut rng = FuzzRng(0x5eed_5eed_5eed_5eed);
+        let (mut ok, mut err) = (0, 0);
+        for round in 0..20_000 {
+            let mut raw = RpcRawHeader::from(&sample_header());
+            raw.aux_pow = if round % 11 == 0 {
+                // not even hex
+                (0..rng.below(40)).map(|_| (b' ' + (rng.next() % 90) as u8) as char).collect()
+            } else {
+                rng.mutate(&valid, round).to_rpc_hex()
+            };
+            match Header::try_from(&raw) {
+                Ok(h) => {
+                    ok += 1;
+                    if let Some(aux) = h.aux_pow.as_deref() {
+                        assert_eq!(aux.validate_structure(), Ok(()));
+                    }
+                }
+                Err(_) => err += 1,
+            }
+        }
+        assert!(ok > 100 && err > 100, "ok {ok}, err {err}");
     }
 
     #[test]

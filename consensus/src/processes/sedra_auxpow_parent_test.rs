@@ -556,3 +556,108 @@ fn sedra_auxpow_interop_vector_test() {
     let stored = std::fs::read_to_string(INTEROP_VECTOR_PATH).expect("vector file; generate with SEDRA_WRITE_VECTOR=1");
     assert_eq!(stored, json, "the proof format changed: regenerate the vector and update the pool software");
 }
+
+// ---- M10 step 5: fuzzing the proof decoder and every check behind it ----
+
+/// Small deterministic PRNG (xorshift64*) so every fuzz run is reproducible without extra dependencies.
+struct FuzzRng(u64);
+
+impl FuzzRng {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n.max(1) as u64) as usize
+    }
+
+    /// A mutation of `valid`: flipped bytes, a cut, a random 4-byte window (length prefixes), an insertion, or noise.
+    fn mutate(&mut self, valid: &[u8], round: usize) -> Vec<u8> {
+        let mut bytes = valid.to_vec();
+        match round % 5 {
+            0 => {
+                for _ in 0..1 + self.below(8) {
+                    let i = self.below(bytes.len());
+                    bytes[i] ^= 1 << self.below(8);
+                }
+            }
+            1 => bytes.truncate(self.below(bytes.len())),
+            2 => {
+                let i = self.below(bytes.len().saturating_sub(4));
+                bytes[i..i + 4].copy_from_slice(&(self.next() as u32).to_le_bytes());
+            }
+            3 => {
+                let i = self.below(bytes.len());
+                let extra: Vec<u8> = (0..1 + self.below(64)).map(|_| self.next() as u8).collect();
+                bytes.splice(i..i, extra);
+            }
+            _ => bytes = (0..self.below(600)).map(|_| self.next() as u8).collect(),
+        }
+        bytes
+    }
+}
+
+#[test]
+fn sedra_auxpow_decoder_fuzz_test() {
+    let (genesis, sedra, aux) = example(AUX_BITS, Some(true));
+    let valid = borsh::to_vec(&aux).unwrap();
+    let active = AuxRule::new(true, genesis);
+    assert!(check_pow_gated(&sedra, Some(&aux), active).passed());
+
+    let mut rng = FuzzRng(0x9e37_79b9_7f4a_7c15);
+    let (mut decoded, mut structural, mut accepted) = (0, 0, 0);
+    for round in 0..30_000 {
+        let bytes = rng.mutate(&valid, round);
+        // nothing below may panic, whatever the bytes
+        let Ok(a) = borsh::from_slice::<AuxPow>(&bytes) else { continue };
+        decoded += 1;
+        let _ = a.estimate_mem_bytes();
+        let _ = a.parent_coinbase.hash();
+        if a.validate_structure().is_ok() {
+            structural += 1;
+        }
+        if check_pow_gated(&sedra, Some(&a), active).passed() {
+            accepted += 1;
+            // an accepted mutation may only differ where the rules allow: everything the binding covers is intact
+            assert_eq!(a.verify_binding(genesis, &sedra), Ok(()));
+            assert_eq!(kaspa_consensus_core::hashing::header::hash(&a.parent_header), kaspa_consensus_core::hashing::header::hash(&aux.parent_header));
+            // the only freedom left is the parent header's cached hash field, which no rule reads
+            let mut normalized = a.clone();
+            normalized.parent_header.hash = aux.parent_header.hash;
+            assert_eq!(borsh::to_vec(&normalized).unwrap(), valid, "an accepted mutation changed more than the cached hash");
+        }
+    }
+    // the mutations reach the checks behind the decoder, not just the decoder
+    assert!(decoded > 3_000, "decoded {decoded}");
+    assert!(structural > 1_000, "structural {structural}");
+    println!("fuzz: {decoded} decoded, {structural} structurally valid, {accepted} accepted");
+}
+
+#[test]
+fn sedra_auxpow_payload_commitment_fuzz_test() {
+    let tagged = AuxPow::tagged_commitment(AuxPow::commitment(MAINNET_PARAMS.genesis.hash, ZERO_HASH));
+    let mut rng = FuzzRng(0x1234_5678_9abc_def1);
+    for round in 0..50_000 {
+        let mut payload: Vec<u8> = (0..rng.below(200)).map(|_| rng.next() as u8).collect();
+        // plant the tag (whole, cut short, or twice) so the reader's edge cases are hit, not just random noise
+        if round % 3 != 0 {
+            let at = rng.below(payload.len() + 1);
+            let cut = if round % 3 == 1 { tagged.len() } else { rng.below(tagged.len() + 1) };
+            payload.splice(at..at, tagged[..cut].iter().copied());
+            if round % 7 == 0 {
+                payload.extend_from_slice(&tagged);
+            }
+        }
+        let found = AuxPow::payload_commitment(&payload);
+        assert_eq!(found.is_some(), AuxPow::payload_carries_commitment(&payload));
+        if let Some(c) = found {
+            // a found commitment always re-encodes to bytes present in the payload, after exactly one tag
+            let encoded = AuxPow::tagged_commitment(c);
+            assert!(payload.windows(encoded.len()).any(|w| w == encoded));
+            assert_eq!(payload.windows(4).filter(|w| *w == b"SDM1").count(), 1);
+        }
+    }
+}

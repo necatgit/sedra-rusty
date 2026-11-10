@@ -82,8 +82,12 @@ fn with_p2p_aux_pow(header: Header, bytes: &[u8]) -> Header {
         return header;
     }
     match borsh::from_slice::<AuxPow>(bytes) {
-        Ok(aux) => match aux.validate_structure() {
-            Ok(()) => header.with_aux_pow(aux),
+        Ok(mut aux) => match aux.validate_structure() {
+            Ok(()) => {
+                // canonical form: the parent's cached hash is the only byte range no rule reads (fuzzing found it)
+                aux.parent_header.finalize();
+                header.with_aux_pow(aux)
+            }
             Err(reason) => {
                 debug!("dropping unusable aux proof on header {}: {}", header.hash, reason);
                 header
@@ -138,6 +142,78 @@ mod sedra_aux_tests {
         let pb = protowire::BlockHeader::from(&native);
         assert!(pb.aux_pow.is_empty(), "a native header sends no proof bytes");
         assert!(Header::try_from(pb).unwrap().aux_pow.is_none());
+    }
+
+
+    /// Small deterministic PRNG (xorshift64*) so every fuzz run is reproducible without extra dependencies.
+    struct FuzzRng(u64);
+
+    impl FuzzRng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            (self.next() % n.max(1) as u64) as usize
+        }
+
+        /// A mutation of `valid`: flipped bytes, a cut, a random 4-byte window (length prefixes), an insertion, or noise.
+        fn mutate(&mut self, valid: &[u8], round: usize) -> Vec<u8> {
+            let mut bytes = valid.to_vec();
+            match round % 5 {
+                0 => {
+                    for _ in 0..1 + self.below(8) {
+                        let i = self.below(bytes.len());
+                        bytes[i] ^= 1 << self.below(8);
+                    }
+                }
+                1 => bytes.truncate(self.below(bytes.len())),
+                2 => {
+                    let i = self.below(bytes.len().saturating_sub(4));
+                    bytes[i..i + 4].copy_from_slice(&(self.next() as u32).to_le_bytes());
+                }
+                3 => {
+                    let i = self.below(bytes.len());
+                    let extra: Vec<u8> = (0..1 + self.below(64)).map(|_| self.next() as u8).collect();
+                    bytes.splice(i..i, extra);
+                }
+                _ => bytes = (0..self.below(600)).map(|_| self.next() as u8).collect(),
+            }
+            bytes
+        }
+    }
+    
+    #[test]
+    fn sedra_p2p_aux_pow_cached_hash_is_normalized() {
+        let mut aux = sample_aux();
+        let real = aux.parent_header.hash;
+        aux.parent_header.hash = 99.into();
+        let mut pb = protowire::BlockHeader::from(&sample_header());
+        pb.aux_pow = borsh::to_vec(&aux).unwrap();
+        let back = Header::try_from(pb).unwrap();
+        assert_eq!(back.aux_pow.unwrap().parent_header.hash, real);
+    }
+
+    #[test]
+    fn sedra_p2p_aux_pow_fuzz_test() {
+        let header = sample_header();
+        let valid = borsh::to_vec(&sample_aux()).unwrap();
+        let mut rng = FuzzRng(0x0bad_cafe_dead_beef);
+        let mut kept = 0;
+        for round in 0..20_000 {
+            let mut pb = protowire::BlockHeader::from(&header);
+            pb.aux_pow = rng.mutate(&valid, round);
+            let back = Header::try_from(pb).expect("whatever the proof bytes, the header decodes");
+            assert_eq!(back.hash, header.hash);
+            if let Some(aux) = back.aux_pow.as_deref() {
+                kept += 1;
+                assert_eq!(aux.validate_structure(), Ok(()), "only structurally valid proofs are kept");
+            }
+        }
+        assert!(kept > 100, "kept {kept}");
     }
 
     #[test]
