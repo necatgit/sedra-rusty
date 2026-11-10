@@ -228,15 +228,26 @@ use kaspa_consensus_core::auxpow::{AuxPow, AuxPowError, MAX_COINBASE_MERKLE_BRAN
 /// additionally carries the Sedra commitment. The parent's root changes with the payload, so its proof of work no
 /// longer holds; that is checked in the work step, not here.
 fn bound_example() -> (Hash, Header, AuxPow) {
+    example(0x1d00ffff, None)
+}
+
+/// A Sedra header with `bits`, bound to a real Kaspa parent that commits to it. With `parent_meets_target` set, the
+/// parent's nonce is searched so that its kHeavyHash meets (true) or misses (false) the Sedra target.
+fn example(bits: u32, parent_meets_target: Option<bool>) -> (Hash, Header, AuxPow) {
     let genesis = MAINNET_PARAMS.genesis.hash;
     let v = coinbases().into_iter().find(|v| v.tx_hashes.len() >= 3).unwrap();
     let mut parent = headers().into_iter().find(|(h, _)| *h == v.block_hash).unwrap().1;
-    let mut sedra = Header::new_finalized(1, vec![vec![genesis]], ZERO_HASH, ZERO_HASH, ZERO_HASH, 1_794_000_000_000, 0x1d00ffff, 0, 61_500_000, 0.into(), 61_000_000, genesis);
+    let mut sedra = Header::new_finalized(1, vec![vec![genesis]], ZERO_HASH, ZERO_HASH, ZERO_HASH, 1_794_000_000_000, bits, 0, 61_500_000, 0.into(), 61_000_000, genesis);
 
     let mut coinbase = v.coinbase.clone();
     coinbase.payload.extend_from_slice(&AuxPow::tagged_commitment(AuxPow::commitment(genesis, AuxPow::nonce_free_header_hash(&sedra))));
     let branch = leaf0_branch(&v.tx_hashes);
     parent.hash_merkle_root = merkle_root_from_coinbase(coinbase.hash().unwrap(), &branch);
+    if let Some(want) = parent_meets_target {
+        let target = Uint256::from_compact_target_bits(bits);
+        let state = kaspa_pow::State::new(&parent);
+        parent.nonce = (0u64..).find(|&n| (state.calculate_pow(n) <= target) == want).unwrap();
+    }
     parent.finalize();
 
     sedra.nonce = AuxPow::nonce_binding(&parent);
@@ -304,4 +315,87 @@ fn sedra_auxpow_borsh_roundtrip_test() {
     assert_eq!(decoded.verify_binding(genesis, &sedra), Ok(()));
     assert_eq!(borsh::to_vec(&decoded).unwrap(), bytes);
     assert!(bytes.len() < 16 * 1024, "a real proof is a few kilobytes: {}", bytes.len());
+}
+
+// ---- M10 step 3: the parent's work against the Sedra target, dual acceptance, block level (§4.4, §4.7) ----
+
+use kaspa_math::Uint256;
+use kaspa_pow::auxpow::{calc_block_level_check_pow_gated, check_pow_gated, parent_pow, verify_aux_pow, AuxPowRejection, AuxRule, PowCheck};
+
+/// Sedra target 2^244: about one kHeavyHash in 4096 meets it, so the searches below stay fast.
+const AUX_BITS: u32 = 0x1f0fffff;
+
+#[test]
+fn sedra_auxpow_work_test() {
+    let (genesis, sedra, aux) = example(AUX_BITS, Some(true));
+    let target = Uint256::from_compact_target_bits(AUX_BITS);
+    let pow = parent_pow(&aux);
+    assert!(pow <= target);
+    assert!(!kaspa_pow::State::new(&sedra).check_pow(sedra.nonce).0, "the aux path must be what decides");
+    // the parent misses Kaspa's own (much harder) target: only the Sedra target counts (§4.4)
+    assert!(!kaspa_pow::State::new(&aux.parent_header).check_pow(aux.parent_header.nonce).0);
+
+    assert_eq!(verify_aux_pow(&aux, genesis, &sedra), Ok(pow));
+    assert_eq!(check_pow_gated(&sedra, Some(&aux), AuxRule::new(true, genesis)), PowCheck::Aux(pow));
+
+    // before activation, or without a proof, the block is a plain native failure
+    let off = check_pow_gated(&sedra, Some(&aux), AuxRule::new(false, genesis));
+    assert!(matches!(off, PowCheck::Failed { aux: None, .. }), "inactive gate ignores the proof: {off:?}");
+    assert!(matches!(check_pow_gated(&sedra, None, AuxRule::new(true, genesis)), PowCheck::Failed { aux: None, .. }));
+
+    // a proof for another network
+    let other = check_pow_gated(&sedra, Some(&aux), AuxRule::new(true, ZERO_HASH));
+    assert!(matches!(other, PowCheck::Failed { aux: Some(AuxPowRejection::Binding(AuxPowError::WrongCommitment)), .. }));
+
+    // a correctly bound parent whose work misses the Sedra target
+    let (genesis, weak_sedra, weak) = example(AUX_BITS, Some(false));
+    assert!(parent_pow(&weak) > target);
+    assert_eq!(weak.verify_binding(genesis, &weak_sedra), Ok(()));
+    assert_eq!(verify_aux_pow(&weak, genesis, &weak_sedra), Err(AuxPowRejection::InsufficientWork));
+    let check = check_pow_gated(&weak_sedra, Some(&weak), AuxRule::new(true, genesis));
+    assert!(matches!(check, PowCheck::Failed { aux: Some(AuxPowRejection::InsufficientWork), .. }));
+    assert!(!check.passed());
+}
+
+#[test]
+fn sedra_auxpow_native_first_test() {
+    let (genesis, mut sedra, aux) = example(AUX_BITS, Some(true));
+    // mine the Sedra header natively: its nonce no longer matches the parent, so the attached proof is invalid
+    let state = kaspa_pow::State::new(&sedra);
+    sedra.nonce = (0u64..).find(|&n| state.check_pow(n).0).unwrap();
+    sedra.finalize();
+    assert!(matches!(aux.verify_binding(genesis, &sedra), Err(AuxPowError::NonceNotBound { .. })));
+    let (_, native_pow) = state.check_pow(sedra.nonce);
+
+    // a bad or missing proof never invalidates a natively valid block, before or after activation
+    for rule in [AuxRule::new(true, genesis), AuxRule::new(false, genesis), AuxRule::new(true, ZERO_HASH)] {
+        assert_eq!(check_pow_gated(&sedra, Some(&aux), rule), PowCheck::Native(native_pow));
+        assert_eq!(check_pow_gated(&sedra, None, rule), PowCheck::Native(native_pow));
+    }
+}
+
+#[test]
+fn sedra_auxpow_block_level_test() {
+    // level = max - bits(pow). Sedra mainnet uses 225 against targets near 2^200; the test target is 2^244, so a
+    // higher max keeps both levels above 0 (the difference between them is the same)
+    let max = 255;
+    let (genesis, sedra, aux) = example(AUX_BITS, Some(true));
+    let active = AuxRule::new(true, genesis);
+
+    // an aux-accepted block's level comes from the parent's work (§4.7)
+    let (level, ok) = calc_block_level_check_pow_gated(&sedra, max, Some(&aux), active);
+    assert!(ok);
+    assert_eq!(level, kaspa_pow::calc_level_from_pow(parent_pow(&aux), max));
+
+    // the native-only calculation rejects the block and computes a lower level: proof validation must use the gate
+    let (native_level, native_ok) = kaspa_pow::calc_block_level_check_pow(&sedra, max);
+    assert!(!native_ok);
+    assert!(native_level < level, "native {native_level} vs aux {level}");
+
+    // before activation the gate gives exactly the native result
+    assert_eq!(calc_block_level_check_pow_gated(&sedra, max, Some(&aux), AuxRule::new(false, genesis)), (native_level, false));
+
+    // genesis keeps the max level
+    let g = Header::new_finalized(1, vec![], ZERO_HASH, ZERO_HASH, ZERO_HASH, 0, AUX_BITS, 0, 0, 0.into(), 0, ZERO_HASH);
+    assert_eq!(calc_block_level_check_pow_gated(&g, max, None, active), (max, true));
 }

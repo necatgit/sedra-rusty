@@ -110,6 +110,15 @@ the tag rules, and a full proof built on a real Kaspa block with every single ru
 rules (second tag, nonce, genesis, canonical encoding, branch limit, Merkle check) fails them. Not yet: the parent's
 work check against the Sedra target, the activation point, P2P/RPC transport (next steps).
 
+**The work check (M10 step 3).** `consensus/pow/src/auxpow.rs`: `verify_aux_pow` runs the binding checks, then the
+Kaspa parent's kHeavyHash against the **Sedra** target from the Sedra header's `bits` (the parent's own `bits` are not
+checked, §4.4). `check_pow_gated` is the dual-acceptance gate: native first, so a missing or bad proof never
+invalidates a natively valid block; the proof path only after activation (`AuxRule`). `calc_block_level_check_pow_gated`
+takes an aux block's level from the parent's work (§4.7); pruning-proof validation must use it with the same rule.
+Tests on a real Kaspa parent mined against a test target: accepted, insufficient work, wrong network, gate off,
+native first with a bad proof, block level. Removing any of six rules (work check, Sedra instead of parent target,
+native first, gate, level from the parent, binding) fails them. Not yet wired into the header pipeline (step 4).
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`

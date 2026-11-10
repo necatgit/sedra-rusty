@@ -1,6 +1,8 @@
 // public for benchmarks
 #[doc(hidden)]
 pub mod matrix;
+// SEDRA (M10): the parent's work against the Sedra target, dual acceptance, block level
+pub mod auxpow;
 #[cfg(feature = "wasm32-sdk")]
 pub mod wasm;
 #[doc(hidden)]
