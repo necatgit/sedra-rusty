@@ -152,6 +152,14 @@ merged-mined; node B accepts all of them through the P2P header conversion; a fr
 (319 merged-mined headers in 9 levels); a node without merged mining rejects the merged-mined block and the proof
 (`PruningProofWrongBlockLevel`, the ZKas sync bug class).
 
+**End-to-end test with a pool (M10 step 5c).** `--devnet-aux-pow-activation=<DAA score>` sets
+`aux_pow_activation` on devnet only (the node refuses to start with it on any other network). With it, two devnet
+nodes, two upstream Kaspa devnet nodes as the parent, the pool software Miningcore and a CPU stratum miner ran
+locally: 401 of 401 merged-mined blocks accepted, relayed to the second node, credited to the miner's Sedra address
+(harness: `tools/e2e-merged-mining/` in the project repository).
+
+Not tested yet: the Go wallet daemon `sedrawallet` against this node (pools and services pay out through it).
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
