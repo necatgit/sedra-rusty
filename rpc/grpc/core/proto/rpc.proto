@@ -35,6 +35,9 @@ message RpcBlockHeader {
   string blueWork = 10;
   string pruningPoint = 14;
   uint64 blueScore = 13;
+  // SEDRA (M10): hex of the borsh-encoded merged-mining proof on the mining path (getBlockTemplate/submitBlock),
+  // empty otherwise. Field 16 as in ZKas (upstream Kaspa uses 15 for the hash).
+  string auxPow = 16;
 }
 
 message RpcBlockLevelParents {

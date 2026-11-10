@@ -123,8 +123,14 @@ native first, gate, level from the parent, binding) fails them. Not yet wired in
 does not depend on how the block was mined and a peer can strip the proof without changing the block's identity. A
 proof whose parent carries a proof is rejected (`NestedProof`). The header's memory estimate counts the proof. The header
 store format changed, so the DB version is now **5**: an older Rust-node database is deleted after confirmation (or
-`--yes`) and the node resyncs; the old 3-to-4 soft upgrade no longer applies. RPC and P2P do not carry the proof yet
-(step 4b); the gate is not wired in yet (step 4c).
+`--yes`) and the node resyncs; the old 3-to-4 soft upgrade no longer applies. The gate is not wired in yet (step 4c).
+
+**Transport (M10 step 4b).** P2P: `BlockHeader.auxPow` (bytes, field 15 as in ZKas; older nodes ignore it). An unusable
+proof from a peer (too large, undecodable, nested, branch too long) is dropped and the header kept, so a relay cannot
+kill a natively valid block or a sync batch; a block that needed the proof then fails PoW, which is not cached as
+invalid. RPC: the mining header `RpcRawHeader.auxPow` (hex, gRPC field 16 as in ZKas, wRPC format 2 with format 1 still
+accepted, JSON may omit it) so a pool submits a merged-mined block through the normal `submitBlock`; a bad proof there is
+an error the pool sees. The query header (`getBlock`) carries no proof, as in ZKas.
 
 ## Releases
 

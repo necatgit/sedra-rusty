@@ -22,6 +22,7 @@ from!(item: &kaspa_rpc_core::RpcHeader, protowire::RpcBlockHeader, {
         blue_work: item.blue_work.to_rpc_hex(),
         blue_score: item.blue_score,
         pruning_point: item.pruning_point.to_string(),
+        aux_pow: String::new(), // SEDRA (M10): the query header carries no proof
     }
 });
 
@@ -39,6 +40,7 @@ from!(item: &kaspa_rpc_core::RpcRawHeader, protowire::RpcBlockHeader, {
         blue_work: item.blue_work.to_rpc_hex(),
         blue_score: item.blue_score,
         pruning_point: item.pruning_point.to_string(),
+        aux_pow: item.aux_pow.clone(),
     }
 });
 
@@ -82,6 +84,7 @@ try_from!(item: &protowire::RpcBlockHeader, kaspa_rpc_core::RpcRawHeader, {
         blue_work: kaspa_rpc_core::RpcBlueWorkType::from_rpc_hex(&item.blue_work)?,
         blue_score: item.blue_score,
         pruning_point: RpcHash::from_str(&item.pruning_point)?,
+        aux_pow: item.aux_pow.clone(),
     }
 });
 
@@ -210,5 +213,23 @@ mod tests {
 
         assert_eq!(b.hash(), b2.hash());
         assert_eq!(p, p2);
+    }
+}
+
+#[cfg(test)]
+mod sedra_aux_tests {
+    use super::*;
+
+    #[test]
+    fn sedra_grpc_raw_header_carries_aux_pow() {
+        let header = Header::new_finalized(1, vec![vec![7.into()]], 1.into(), 2.into(), 3.into(), 5, 0x1f0fffff, 42, 6, 9.into(), 8, 4.into());
+        let mut raw = kaspa_rpc_core::RpcRawHeader::from(&header);
+        raw.aux_pow = "00ff".to_string(); // the conversion only carries the hex; RpcRawHeader -> Header validates it
+        let pb = protowire::RpcBlockHeader::from(&raw);
+        assert_eq!(pb.aux_pow, "00ff");
+        assert_eq!(kaspa_rpc_core::RpcRawHeader::try_from(&pb).unwrap().aux_pow, "00ff");
+        // the query header never carries one
+        let pb = protowire::RpcBlockHeader::from(&kaspa_rpc_core::RpcHeader::from(header));
+        assert!(pb.aux_pow.is_empty());
     }
 }

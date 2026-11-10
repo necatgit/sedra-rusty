@@ -170,6 +170,7 @@ mod mockery {
                 blue_score: mock(),
                 blue_work: mock(),
                 pruning_point: mock(),
+                aux_pow: String::new(),
             }
         }
     }

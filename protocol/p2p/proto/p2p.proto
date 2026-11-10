@@ -76,6 +76,9 @@ message BlockHeader{
   bytes blueWork = 10;
   Hash pruningPoint = 14;
   uint64 blueScore = 13;
+  // SEDRA (M10): borsh-encoded merged-mining proof, empty for native blocks; outside the block hash. Older nodes
+  // ignore the unknown field. Same field number as ZKas.
+  bytes auxPow = 15;
 }
 
 message BlockLevelParents {
