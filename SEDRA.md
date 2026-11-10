@@ -119,6 +119,13 @@ Tests on a real Kaspa parent mined against a test target: accepted, insufficient
 native first with a bad proof, block level. Removing any of six rules (work check, Sedra instead of parent target,
 native first, gate, level from the parent, binding) fails them. Not yet wired into the header pipeline (step 4).
 
+**The header field (M10 step 4a).** `Header::aux_pow: Option<Box<AuxPow>>`, outside the header hash, so the block hash
+does not depend on how the block was mined and a peer can strip the proof without changing the block's identity. A
+proof whose parent carries a proof is rejected (`NestedProof`). The header's memory estimate counts the proof. The header
+store format changed, so the DB version is now **5**: an older Rust-node database is deleted after confirmation (or
+`--yes`) and the node resyncs; the old 3-to-4 soft upgrade no longer applies. RPC and P2P do not carry the proof yet
+(step 4b); the gate is not wired in yet (step 4c).
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`

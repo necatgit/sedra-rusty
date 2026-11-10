@@ -310,6 +310,7 @@ impl TryCastFromJs for Header {
                         .get_value("pruningPoint")?
                         .try_into_owned()
                         .map_err(|err| Error::convert("pruningPoint", err))?,
+                    aux_pow: None,
                 };
 
                 Ok(header.into())

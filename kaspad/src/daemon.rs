@@ -28,7 +28,7 @@ use kaspa_utils_tower::counters::TowerConnectionCounters;
 use kaspa_addressmanager::AddressManager;
 use kaspa_consensus::{consensus::factory::Factory as ConsensusFactory, pipeline::ProcessingCounters};
 use kaspa_consensus::{
-    consensus::factory::MultiConsensusManagementStore, model::stores::headers::DbHeadersStore, pipeline::monitor::ConsensusMonitor,
+    consensus::factory::{MultiConsensusManagementStore, LATEST_DB_VERSION}, model::stores::headers::DbHeadersStore, pipeline::monitor::ConsensusMonitor,
 };
 use kaspa_consensusmanager::ConsensusManager;
 use kaspa_core::task::runtime::AsyncRuntime;
@@ -357,7 +357,9 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
         // TODO: Update this entire section to a more robust implementation that allows applying multiple upgrade strategies.
         // If I'm at version 3 and latest version is 7, I need to be able to upgrade to that version following the intermediate
         // steps without having to delete the DB
-        if version == 3 {
+        // SEDRA (M10): the soft upgrade only leads to version 4; since version 5 changed the header format, a
+        // version-3 database is deleted like any other old one.
+        if version == 3 && LATEST_DB_VERSION == 4 {
             let active_consensus_dir_name = mcms.active_consensus_dir_name().unwrap();
 
             match active_consensus_dir_name {

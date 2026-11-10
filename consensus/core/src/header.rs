@@ -1,4 +1,4 @@
-use crate::{hashing, BlueWorkType};
+use crate::{auxpow::AuxPow, hashing, BlueWorkType};
 use borsh::{BorshDeserialize, BorshSerialize};
 use kaspa_hashes::Hash;
 use kaspa_utils::mem_size::MemSizeEstimator;
@@ -23,6 +23,15 @@ pub struct Header {
     pub blue_work: BlueWorkType,
     pub blue_score: u64,
     pub pruning_point: Hash,
+    /// SEDRA (M10): optional merged-mining proof (SIP-0001 §4.1). **Not part of the header hash**
+    /// (`hashing::header::hash` writes the fields above one by one), so the block hash is the same whether the block
+    /// was mined natively or through a Kaspa parent, and a relaying peer can strip the proof without changing the
+    /// block's identity. Only the proof-of-work gate reads it, and only after activation. `None` for native blocks.
+    ///
+    /// Inputs that omit the field (RPC JSON) decode to `None` (serde treats a missing `Option` that way). No
+    /// `skip_serializing_if`: bincode (the header store, not self-describing) must always write it. Adding the field
+    /// changed the header store format (DB version 5).
+    pub aux_pow: Option<Box<AuxPow>>,
 }
 
 impl Header {
@@ -55,9 +64,16 @@ impl Header {
             blue_work,
             blue_score,
             pruning_point,
+            aux_pow: None,
         };
         header.finalize();
         header
+    }
+
+    /// Attaches a merged-mining proof. The hash is unaffected, so no re-finalize is needed.
+    pub fn with_aux_pow(mut self, aux_pow: AuxPow) -> Self {
+        self.aux_pow = Some(Box::new(aux_pow));
+        self
     }
 
     /// Finalizes the header and recomputes the header hash
@@ -89,6 +105,7 @@ impl Header {
             blue_work: 0.into(),
             blue_score: 0,
             pruning_point: Default::default(),
+            aux_pow: None,
         }
     }
 }
@@ -101,7 +118,10 @@ impl AsRef<Header> for Header {
 
 impl MemSizeEstimator for Header {
     fn estimate_mem_bytes(&self) -> usize {
-        size_of::<Self>() + self.parents_by_level.iter().map(|l| l.len()).sum::<usize>() * size_of::<Hash>()
+        size_of::<Self>()
+            + self.parents_by_level.iter().map(|l| l.len()).sum::<usize>() * size_of::<Hash>()
+            // SEDRA (M10): the proof lives on the heap and must count against the header cache budget
+            + self.aux_pow.as_ref().map_or(0, |a| a.estimate_mem_bytes())
     }
 }
 

@@ -11,7 +11,8 @@
 //! The proof travels next to the Sedra header, outside its hash. Nothing here trusts a cached hash: the parent's hash
 //! is always recomputed from its fields. Follows the ZKas design (zkas-rusty `consensus/core/src/auxpow.rs`), with
 //! Sedra's own tag and domain string, a base64url commitment (Q25) and Kaspa's current coinbase format
-//! ([`crate::kaspa_parent`]). Unlike ZKas, the parent header type has no witness field, so proofs cannot nest.
+//! ([`crate::kaspa_parent`]). The parent is a [`Header`] and so has a witness field too; a proof whose parent carries
+//! a proof is rejected ([`AuxPowError::NestedProof`]), so proofs cannot nest (nesting depth 1, §4.1).
 
 use crate::{
     hashing,
@@ -63,6 +64,8 @@ pub struct AuxPow {
 pub enum AuxPowError {
     BranchTooLong(usize),
     TooLarge(usize),
+    /// The parent header carries a proof itself. Kaspa has no such field, so this is never legitimate.
+    NestedProof,
     UnhashableCoinbase(u16),
     /// The coinbase payload has no well-formed `SDM1` commitment, or more than one `SDM1` tag.
     NoUniqueCommitment,
@@ -77,6 +80,7 @@ impl fmt::Display for AuxPowError {
         match self {
             Self::BranchTooLong(n) => write!(f, "coinbase merkle branch too long: {n} > {MAX_COINBASE_MERKLE_BRANCH}"),
             Self::TooLarge(n) => write!(f, "aux proof too large: {n} > {MAX_AUX_POW_SERIALIZED_LEN} bytes"),
+            Self::NestedProof => write!(f, "the parent header carries an aux proof itself"),
             Self::UnhashableCoinbase(v) => write!(f, "parent coinbase cannot be hashed (transaction version {v})"),
             Self::NoUniqueCommitment => write!(f, "parent coinbase has no unique well-formed SDM1 commitment"),
             Self::WrongCommitment => write!(f, "parent coinbase commits to a different block"),
@@ -145,10 +149,24 @@ impl AuxPow {
         Self::payload_commitment(payload).is_some()
     }
 
+    /// Heap and inline bytes of this proof, for cache budgets. Every variable-length part counts (the coinbase's
+    /// output scripts and payload too), so a proof cannot hold more memory than the cache believes.
+    pub fn estimate_mem_bytes(&self) -> usize {
+        size_of::<Self>()
+            + self.parent_header.parents_by_level.iter().map(|l| l.len() * size_of::<Hash>() + size_of::<Vec<Hash>>()).sum::<usize>()
+            + self.parent_header.aux_pow.as_ref().map_or(0, |a| a.estimate_mem_bytes())
+            + self.parent_coinbase.outputs.iter().map(|o| size_of_val(o) + o.script_public_key.script().len()).sum::<usize>()
+            + self.parent_coinbase.payload.len()
+            + self.coinbase_merkle_branch.len() * size_of::<Hash>()
+    }
+
     /// Size limits every decode edge applies before a proof is stored, relayed or hashed (§4.1).
     pub fn validate_structure(&self) -> Result<(), AuxPowError> {
         if self.coinbase_merkle_branch.len() > MAX_COINBASE_MERKLE_BRANCH {
             return Err(AuxPowError::BranchTooLong(self.coinbase_merkle_branch.len()));
+        }
+        if self.parent_header.aux_pow.is_some() {
+            return Err(AuxPowError::NestedProof);
         }
         let len = borsh::to_vec(self).map(|v| v.len()).unwrap_or(usize::MAX);
         if len > MAX_AUX_POW_SERIALIZED_LEN {

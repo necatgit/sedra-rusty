@@ -116,6 +116,7 @@ impl From<RpcHeader> for Header {
             blue_work: header.blue_work,
             blue_score: header.blue_score,
             pruning_point: header.pruning_point,
+            aux_pow: None, // SEDRA (M10): the RPC header gets the proof in step 4b
         }
     }
 }
@@ -136,6 +137,7 @@ impl From<&RpcHeader> for Header {
             blue_work: header.blue_work,
             blue_score: header.blue_score,
             pruning_point: header.pruning_point,
+            aux_pow: None, // SEDRA (M10): the RPC header gets the proof in step 4b
         }
     }
 }

@@ -59,7 +59,9 @@ pub struct MultiConsensusMetadata {
     version: u32,
 }
 
-const LATEST_DB_VERSION: u32 = 4;
+// SEDRA (M10): 5 = headers carry the optional merged-mining proof (header store format changed); older
+// databases are deleted after confirmation and the node resyncs (kaspad/src/daemon.rs).
+pub const LATEST_DB_VERSION: u32 = 5;
 impl Default for MultiConsensusMetadata {
     fn default() -> Self {
         Self {

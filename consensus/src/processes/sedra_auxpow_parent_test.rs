@@ -399,3 +399,87 @@ fn sedra_auxpow_block_level_test() {
     let g = Header::new_finalized(1, vec![], ZERO_HASH, ZERO_HASH, ZERO_HASH, 0, AUX_BITS, 0, 0, 0.into(), 0, ZERO_HASH);
     assert_eq!(calc_block_level_check_pow_gated(&g, max, None, active), (max, true));
 }
+
+// ---- M10 step 4a: the proof as an optional header field outside the header hash ----
+
+use crate::model::stores::headers::{DbHeadersStore, HeaderStore, HeaderStoreReader};
+use kaspa_database::{create_temp_db, prelude::{CachePolicy, ConnBuilder}};
+use kaspa_utils::mem_size::MemSizeEstimator;
+use std::sync::Arc;
+
+#[test]
+fn sedra_auxpow_header_field_not_hashed_test() {
+    let (genesis, sedra, aux) = bound_example();
+    let with = sedra.clone().with_aux_pow(aux.clone());
+    assert_eq!(with.hash, sedra.hash);
+    let mut refinalized = with.clone();
+    refinalized.finalize();
+    assert_eq!(refinalized.hash, sedra.hash, "the proof is outside the header hash");
+    // the proof still binds the header it is attached to
+    assert_eq!(aux.verify_binding(genesis, &with), Ok(()));
+}
+
+#[test]
+fn sedra_auxpow_header_store_roundtrip_test() {
+    let (_, sedra, aux) = bound_example();
+    let with = sedra.clone().with_aux_pow(aux.clone());
+    let other = example(AUX_BITS, Some(true)).1; // a second native-style header without a proof
+
+    let (_lifetime, db) = create_temp_db!(ConnBuilder::default().with_files_limit(10));
+    // no cache: every read decodes the stored bytes
+    let store = DbHeadersStore::new(db, CachePolicy::Empty, CachePolicy::Empty);
+    store.insert(with.hash, Arc::new(with.clone()), 7).unwrap();
+    store.insert(other.hash, Arc::new(other.clone()), 3).unwrap();
+
+    let back = store.get_header(with.hash).unwrap();
+    let back_aux = back.aux_pow.as_deref().expect("the proof survives the header store");
+    assert_eq!(borsh::to_vec(back_aux).unwrap(), borsh::to_vec(&aux).unwrap());
+    assert_eq!(back.hash, with.hash);
+    assert_eq!(store.get_header_with_block_level(with.hash).unwrap().block_level, 7);
+    assert!(store.get_header(other.hash).unwrap().aux_pow.is_none());
+
+    // why the DB version moved to 5: a header stored in the old format (no trailing Option tag) no longer decodes
+    let mut old = bincode::serialize(&other).unwrap();
+    assert_eq!(old.pop(), Some(0), "a header without a proof ends with the None tag");
+    assert!(bincode::deserialize::<Header>(&old).is_err());
+}
+
+#[test]
+fn sedra_auxpow_header_json_test() {
+    let (_, sedra, aux) = bound_example();
+    // JSON without the field (RPC clients that do not know it) still decodes
+    let mut v = serde_json::to_value(&sedra).unwrap();
+    assert!(v.as_object_mut().unwrap().remove("auxPow").is_some());
+    let h: Header = serde_json::from_value(v).unwrap();
+    assert!(h.aux_pow.is_none());
+    assert_eq!(h.hash, sedra.hash);
+    // with the field it round-trips
+    let with = sedra.with_aux_pow(aux.clone());
+    let back: Header = serde_json::from_str(&serde_json::to_string(&with).unwrap()).unwrap();
+    assert_eq!(borsh::to_vec(back.aux_pow.as_deref().unwrap()).unwrap(), borsh::to_vec(&aux).unwrap());
+}
+
+#[test]
+fn sedra_auxpow_no_nesting_test() {
+    let (genesis, sedra, aux) = bound_example();
+    let mut nested = aux.clone();
+    nested.parent_header = nested.parent_header.clone().with_aux_pow(aux.clone());
+    // the parent's hash is unchanged, so only the explicit rule stops it
+    assert_eq!(kaspa_consensus_core::hashing::header::hash(&nested.parent_header), aux.parent_header.hash);
+    assert_eq!(nested.validate_structure(), Err(AuxPowError::NestedProof));
+    assert_eq!(nested.verify_binding(genesis, &sedra), Err(AuxPowError::NestedProof));
+}
+
+#[test]
+fn sedra_auxpow_header_mem_estimate_test() {
+    let (_, sedra, aux) = bound_example();
+    let with = sedra.clone().with_aux_pow(aux.clone());
+    let extra = with.estimate_mem_bytes() - sedra.estimate_mem_bytes();
+    assert_eq!(extra, aux.estimate_mem_bytes());
+    // every variable-length part counts
+    let parents: usize = aux.parent_header.parents_by_level.iter().map(|l| l.len() * 32).sum();
+    assert!(extra >= parents + aux.parent_coinbase.payload.len() + aux.coinbase_merkle_branch.len() * 32);
+    let mut big = aux.clone();
+    big.parent_coinbase.payload.extend_from_slice(&[0u8; 10_000]);
+    assert_eq!(big.estimate_mem_bytes(), aux.estimate_mem_bytes() + 10_000);
+}
