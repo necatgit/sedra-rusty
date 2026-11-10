@@ -33,6 +33,20 @@ issue; a match by someone other than the publisher is worth more than any signat
 Release tags are not signed yet. Once a signing key is set up, its fingerprint is published here and in the project
 repository before the first signed tag.
 
+## Verify the tag signature
+
+Release tags are signed by Nec with an SSH key (Ed25519), fingerprint
+`SHA256:Eh/4CtYZPvHjYldtNexGX4RLCsz/Mi5MsBZDLKTRvUc`. The key is published at <https://puddlepool.com/keys.html> and
+listed as a signing key on the GitHub account `necatgit`:
+
+```
+curl -sO https://puddlepool.com/keys/allowed_signers
+git -c gpg.ssh.allowedSignersFile=allowed_signers verify-tag v0.1.0
+```
+
+A good signature shows who made the tag. Whether the binaries match the source is shown only by rebuilding them
+(next section).
+
 ## Rebuild a release yourself
 
 Requirements: Linux x86_64, git, and Docker or Podman. One build took about 5 minutes and 1.5 GB of disk on an 8-thread machine (measured natively; the container adds the image build and the dependency download).
@@ -78,6 +92,7 @@ claimed, or the published binary is not what the source produces. Both must be f
 
 1. Full test run on the release commit (`cargo test --release --no-fail-fast --workspace --exclude kaspa-wasm
    --exclude kaspa-wallet-pskt`), result recorded in the release notes.
-2. Set the release in `core/src/kaspad_env.rs` (`sedra_release`), commit, tag.
+2. Set the release in `core/src/kaspad_env.rs` (`sedra_release`), commit, and sign the tag with the release key
+   (`git -c gpg.format=ssh -c user.signingkey=<private key file> tag -s vX.Y.Z -m "sedra-rusty vX.Y.Z"`).
 3. `contrib/reproducible/build-in-docker.sh` on two different machines; both `SHA256SUMS` must match.
 4. Publish the archive, `SHA256SUMS` and the release notes; open the release issue for independent rebuilds.
