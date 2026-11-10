@@ -2405,6 +2405,7 @@ dependencies = [
  "arc-swap",
  "async-channel 2.3.1",
  "bincode",
+ "borsh",
  "criterion",
  "crossbeam-channel",
  "faster-hex",

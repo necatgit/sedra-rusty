@@ -99,6 +99,17 @@ Tests in `consensus/src/processes/sedra_auxpow_parent_test.rs` against 20 consec
 hashes equal Kaspa's, 20/20 branches reach `hashMerkleRoot` (depths 0 to 3), plus negative cases. Removing the
 mass field, the covenant flag or the lock time from the hash, or accepting a future version, makes them fail.
 
+**The proof (M10 step 2).** `consensus/core/src/auxpow.rs`: `AuxPow` = Kaspa parent header + `KaspaParentCoinbase` +
+Merkle branch, Borsh-serializable, outside the Sedra header hash. Structural rules of SIP-0001 §4.1-§4.5 in
+`verify_binding`: branch at most 64 entries, proof at most 256 KiB, hashable coinbase, exactly one `SDM1` tag followed
+by the canonical base64url (no padding) encoding of `H("sedra_aux_bind1" || genesis || nonce-free header hash)`
+(block-hash hasher), the coinbase under the parent's `hash_merkle_root`, and the Sedra nonce equal to the first 8 bytes
+(LE) of the recomputed parent hash. `payload_carries_commitment` is the input for the self-parent ban (§4.5). Each
+failure has its own `AuxPowError`. Tests: commitment and base64url against values computed independently in Python,
+the tag rules, and a full proof built on a real Kaspa block with every single rule broken once; removing any of six
+rules (second tag, nonce, genesis, canonical encoding, branch limit, Merkle check) fails them. Not yet: the parent's
+work check against the Sedra target, the activation point, P2P/RPC transport (next steps).
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`

@@ -15,6 +15,8 @@ pub use kaspa_hashes::Hash;
 
 pub mod acceptance_data;
 pub mod api;
+// SEDRA (M10): the merged-mining proof and its structural checks
+pub mod auxpow;
 pub mod block;
 pub mod blockhash;
 pub mod blockstatus;

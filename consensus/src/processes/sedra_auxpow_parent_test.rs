@@ -219,3 +219,89 @@ fn sedra_kaspa_parent_negative_test() {
     assert_ne!(merkle_root_from_coinbase(good, &branch[..branch.len() - 1]), v.hash_merkle_root, "shortened branch");
     assert_ne!(merkle_root_from_coinbase(v.tx_hashes[1], &branch), v.hash_merkle_root, "another transaction as leaf 0");
 }
+
+// ---- M10 step 2: the whole proof on a real Kaspa block ----
+
+use kaspa_consensus_core::auxpow::{AuxPow, AuxPowError, MAX_COINBASE_MERKLE_BRANCH};
+
+/// A Sedra header and a proof whose parent is a real Kaspa block (one with a Merkle branch) whose coinbase payload
+/// additionally carries the Sedra commitment. The parent's root changes with the payload, so its proof of work no
+/// longer holds; that is checked in the work step, not here.
+fn bound_example() -> (Hash, Header, AuxPow) {
+    let genesis = MAINNET_PARAMS.genesis.hash;
+    let v = coinbases().into_iter().find(|v| v.tx_hashes.len() >= 3).unwrap();
+    let mut parent = headers().into_iter().find(|(h, _)| *h == v.block_hash).unwrap().1;
+    let mut sedra = Header::new_finalized(1, vec![vec![genesis]], ZERO_HASH, ZERO_HASH, ZERO_HASH, 1_794_000_000_000, 0x1d00ffff, 0, 61_500_000, 0.into(), 61_000_000, genesis);
+
+    let mut coinbase = v.coinbase.clone();
+    coinbase.payload.extend_from_slice(&AuxPow::tagged_commitment(AuxPow::commitment(genesis, AuxPow::nonce_free_header_hash(&sedra))));
+    let branch = leaf0_branch(&v.tx_hashes);
+    parent.hash_merkle_root = merkle_root_from_coinbase(coinbase.hash().unwrap(), &branch);
+    parent.finalize();
+
+    sedra.nonce = AuxPow::nonce_binding(&parent);
+    sedra.finalize();
+    (genesis, sedra, AuxPow { parent_header: parent, parent_coinbase: coinbase, coinbase_merkle_branch: branch })
+}
+
+#[test]
+fn sedra_auxpow_binding_on_real_kaspa_block_test() {
+    let (genesis, sedra, aux) = bound_example();
+    assert_eq!(aux.verify_binding(genesis, &sedra), Ok(()));
+    assert!(!aux.coinbase_merkle_branch.is_empty());
+
+    // the nonce is outside the commitment, everything else is inside
+    let mut s = sedra.clone();
+    s.nonce += 1;
+    assert!(matches!(aux.verify_binding(genesis, &s), Err(AuxPowError::NonceNotBound { .. })), "nonce");
+    let mut s = sedra.clone();
+    s.timestamp += 1;
+    assert_eq!(aux.verify_binding(genesis, &s), Err(AuxPowError::WrongCommitment), "timestamp is bound");
+    let mut s = sedra.clone();
+    s.bits += 1;
+    assert_eq!(aux.verify_binding(genesis, &s), Err(AuxPowError::WrongCommitment), "bits are bound");
+    assert_eq!(aux.verify_binding(ZERO_HASH, &sedra), Err(AuxPowError::WrongCommitment), "another network's genesis");
+
+    // the nonce is bound to this parent: another parent (here: another header field) changes it
+    let mut a = aux.clone();
+    a.parent_header.timestamp += 1;
+    a.parent_header.finalize();
+    assert!(matches!(a.verify_binding(genesis, &sedra), Err(AuxPowError::NonceNotBound { .. })), "nonce bound to the parent");
+
+    // coinbase and branch
+    let mut a = aux.clone();
+    a.coinbase_merkle_branch[0] = ZERO_HASH;
+    assert_eq!(a.verify_binding(genesis, &sedra), Err(AuxPowError::NotInParentMerkleRoot), "branch");
+    let mut a = aux.clone();
+    a.parent_coinbase.outputs[0].value += 1;
+    assert_eq!(a.verify_binding(genesis, &sedra), Err(AuxPowError::NotInParentMerkleRoot), "coinbase changed");
+    let mut a = aux.clone();
+    let tag = AuxPow::tagged_commitment(AuxPow::commitment(genesis, AuxPow::nonce_free_header_hash(&sedra)));
+    a.parent_coinbase.payload.extend_from_slice(&tag);
+    assert_eq!(a.verify_binding(genesis, &sedra), Err(AuxPowError::NoUniqueCommitment), "two commitments");
+    let mut a = aux.clone();
+    a.parent_coinbase.version = 2;
+    assert_eq!(a.verify_binding(genesis, &sedra), Err(AuxPowError::UnhashableCoinbase(2)), "unknown version");
+
+    // limits
+    let mut a = aux.clone();
+    a.coinbase_merkle_branch = vec![ZERO_HASH; MAX_COINBASE_MERKLE_BRANCH + 1];
+    assert_eq!(a.verify_binding(genesis, &sedra), Err(AuxPowError::BranchTooLong(MAX_COINBASE_MERKLE_BRANCH + 1)), "branch limit");
+    let mut a = aux.clone();
+    a.parent_coinbase.payload.extend(std::iter::repeat(0u8).take(300 * 1024));
+    assert!(matches!(a.verify_binding(genesis, &sedra), Err(AuxPowError::TooLarge(_))), "size limit");
+
+    // self-parent ban input: the parent's coinbase carries a commitment, a plain Kaspa coinbase does not
+    assert!(AuxPow::payload_carries_commitment(&aux.parent_coinbase.payload));
+    assert!(coinbases().iter().all(|v| !AuxPow::payload_carries_commitment(&v.coinbase.payload)));
+}
+
+#[test]
+fn sedra_auxpow_borsh_roundtrip_test() {
+    let (genesis, sedra, aux) = bound_example();
+    let bytes = borsh::to_vec(&aux).unwrap();
+    let decoded: AuxPow = borsh::from_slice(&bytes).unwrap();
+    assert_eq!(decoded.verify_binding(genesis, &sedra), Ok(()));
+    assert_eq!(borsh::to_vec(&decoded).unwrap(), bytes);
+    assert!(bytes.len() < 16 * 1024, "a real proof is a few kilobytes: {}", bytes.len());
+}

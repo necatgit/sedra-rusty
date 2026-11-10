@@ -50,6 +50,7 @@ rand = { workspace = true, features = ["small_rng"] }
 tokio = { workspace = true, features = ["rt", "macros"] }
 
 [dev-dependencies]
+borsh.workspace = true
 criterion.workspace = true
 serde_json.workspace = true
 flate2.workspace = true
