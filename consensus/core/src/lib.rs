@@ -25,6 +25,8 @@ pub mod daa_score_timestamp;
 pub mod errors;
 pub mod hashing;
 pub mod header;
+// SEDRA (M10): Kaspa parent blocks for merged mining, hashed as Kaspa hashes them today
+pub mod kaspa_parent;
 pub mod mass;
 pub mod merkle;
 pub mod mining_rules;

@@ -83,6 +83,22 @@ From the back-port list (#29), the must-fix and should items are merged; the opt
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
 removing Kaspa-specific RPC data (mainnet timestamp samples).
 
+## Step 2: merged mining (branch `m10-auxpow`, not in `dev`)
+
+Work towards SIP-0001. Nothing of it is active; it lives only on this branch until the proposal is agreed.
+
+**Kaspa parents (M10 step 1).** `consensus/core/src/kaspa_parent.rs`. Kaspa's header hash is unchanged since
+v1.0.1 (version 2 headers compress the parents only for storage; the hash runs over the expanded parents), so a Kaspa
+parent header is a normal `Header` with expanded parents. Kaspa's coinbase, however, is a **version 1** transaction
+since Toccata (outputs carry a covenant flag, the mass is always committed), which this code base cannot represent,
+so it has its own type `KaspaParentCoinbase` with Kaspa's current hashing; an unknown future version is not hashed
+(merged mining pauses, native mining continues). `merkle_root_from_coinbase` folds the coinbase's Merkle branch.
+Tests in `consensus/src/processes/sedra_auxpow_parent_test.rs` against 20 consecutive real Kaspa mainnet blocks
+(`testing/integration/testdata/kaspa_mainnet_headers_v2.json.gz` from a Kaspa node's GetBlock,
+`kaspa_mainnet_coinbases_v1.json.gz` from api.kaspa.org): 20/20 header hashes and kHeavyHash checks, 20/20 coinbase
+hashes equal Kaspa's, 20/20 branches reach `hashMerkleRoot` (depths 0 to 3), plus negative cases. Removing the
+mass field, the covenant flag or the lock time from the hash, or accepting a future version, makes them fail.
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
