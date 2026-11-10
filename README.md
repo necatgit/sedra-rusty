@@ -64,7 +64,7 @@ never from this code itself.
 ## Contributing and reporting
 
 Issues and reviews are welcome, especially independent rebuilds of releases and comparisons with a Go node. Security
-problems: please report them privately first (contact in the project repository).
+problems: please report them privately first, as described in [SECURITY.md](SECURITY.md).
 
 Working rules for changes: [AGENTS.md](AGENTS.md).
 
