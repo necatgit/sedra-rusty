@@ -685,7 +685,9 @@ impl MiningManager {
                     None
                 } else if mempool.has_transaction(&transaction_id, TransactionQuery::TransactionsOnly) {
                     x.clear_entries();
-                    mempool.populate_mempool_entries(&mut x);
+                    // SEDRA (upstream 778b21e2): impossible for transactions already admitted to the pool, which were fully
+                    // populated before insertion; on error the transaction falls through to the missing-outpoints path.
+                    let _ = mempool.populate_mempool_entries(&mut x);
                     match x.is_fully_populated() {
                         false => Some(x),
                         true => {

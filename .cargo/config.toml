@@ -1,0 +1,7 @@
+# SEDRA: build settings for every environment.
+
+[env]
+# RocksDB 8.10 (librocksdb-sys 0.16) uses uint64_t without `#include <cstdint>`. GCC 13 included it indirectly;
+# GCC 15 (Ubuntu 26.04 and other current systems) does not, and the build fails. Force-including the header fixes it
+# without changing RocksDB's source. Cargo does not override a CXXFLAGS already set in the environment.
+CXXFLAGS = "-include cstdint"

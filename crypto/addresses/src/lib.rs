@@ -22,6 +22,10 @@ mod bech32;
 /// Error type produced by [`Address`] operations.
 #[derive(Error, PartialEq, Eq, Debug, Clone)]
 pub enum AddressError {
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249)
+    #[error("The address payload length is invalid: expected {expected} bytes, got {actual}")]
+    InvalidPayloadLength { expected: usize, actual: usize },
+
     #[error("The address has an invalid prefix {0}")]
     InvalidPrefix(String),
 
@@ -66,13 +70,13 @@ impl From<workflow_wasm::error::Error> for AddressError {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash, Serialize, Deserialize, BorshSerialize, BorshDeserialize)]
 #[borsh(use_discriminant = true)]
 pub enum Prefix {
-    #[serde(rename = "kaspa")]
+    #[serde(rename = "sedra")]
     Mainnet,
-    #[serde(rename = "kaspatest")]
+    #[serde(rename = "sedratest")]
     Testnet,
-    #[serde(rename = "kaspasim")]
+    #[serde(rename = "sedrasim")]
     Simnet,
-    #[serde(rename = "kaspadev")]
+    #[serde(rename = "sedradev")]
     Devnet,
     #[cfg(test)]
     A,
@@ -83,10 +87,10 @@ pub enum Prefix {
 impl Prefix {
     fn as_str(&self) -> &'static str {
         match self {
-            Prefix::Mainnet => "kaspa",
-            Prefix::Testnet => "kaspatest",
-            Prefix::Simnet => "kaspasim",
-            Prefix::Devnet => "kaspadev",
+            Prefix::Mainnet => "sedra",
+            Prefix::Testnet => "sedratest",
+            Prefix::Simnet => "sedrasim",
+            Prefix::Devnet => "sedradev",
             #[cfg(test)]
             Prefix::A => "a",
             #[cfg(test)]
@@ -114,10 +118,10 @@ impl TryFrom<&str> for Prefix {
 
     fn try_from(prefix: &str) -> Result<Self, Self::Error> {
         match prefix {
-            "kaspa" => Ok(Prefix::Mainnet),
-            "kaspatest" => Ok(Prefix::Testnet),
-            "kaspasim" => Ok(Prefix::Simnet),
-            "kaspadev" => Ok(Prefix::Devnet),
+            "sedra" => Ok(Prefix::Mainnet),
+            "sedratest" => Ok(Prefix::Testnet),
+            "sedrasim" => Ok(Prefix::Simnet),
+            "sedradev" => Ok(Prefix::Devnet),
             #[cfg(test)]
             "a" => Ok(Prefix::A),
             #[cfg(test)]
@@ -224,6 +228,16 @@ impl std::fmt::Debug for Address {
 }
 
 impl Address {
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249): like [`Self::new`], but returns an error instead of
+    /// panicking when the payload length does not match the version. Use it for any externally supplied address.
+    pub fn try_new(prefix: Prefix, version: Version, payload: &[u8]) -> Result<Self, AddressError> {
+        let expected = version.public_key_len();
+        if !prefix.is_test() && payload.len() != expected {
+            return Err(AddressError::InvalidPayloadLength { expected, actual: payload.len() });
+        }
+        Ok(Self { prefix, payload: PayloadVec::from_slice(payload), version })
+    }
+
     pub fn new(prefix: Prefix, version: Version, payload: &[u8]) -> Self {
         if !prefix.is_test() {
             assert_eq!(payload.len(), version.public_key_len());
@@ -303,7 +317,8 @@ impl BorshDeserialize for Address {
         let prefix: Prefix = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let version: Version = borsh::BorshDeserialize::deserialize_reader(reader)?;
         let payload: Vec<u8> = borsh::BorshDeserialize::deserialize_reader(reader)?;
-        Ok(Self::new(prefix, version, &payload))
+        // SEDRA (security back-port, upstream 2a47b249)
+        Self::try_new(prefix, version, &payload).map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string()))
     }
 }
 
@@ -578,11 +593,11 @@ mod tests {
             (Address::new(Prefix::B, Version::ScriptHash, b"1234598760"), "b:pqcnyve5x5unsdekxqeusxeyu2"),
             (Address::new(Prefix::B, Version::ScriptHash, b"abcdefghijklmnopqrstuvwxyz"), "b:ppskycmyv4nxw6rfdf4kcmtwdac8zunnw36hvamc09aqtpppz8lk"),
             (Address::new(Prefix::B, Version::ScriptHash, b"000000000000000000000000000000000000000000"), "b:pqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrq7ag684l3"),
-            (Address::new(Prefix::Testnet, Version::PubKey, &[0u8; 32]),      "kaspatest:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhqrxplya"),
-            (Address::new(Prefix::Testnet, Version::PubKeyECDSA, &[0u8; 33]), "kaspatest:qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhe837j2d"),
-            (Address::new(Prefix::Testnet, Version::PubKeyECDSA, b"\xba\x01\xfc\x5f\x4e\x9d\x98\x79\x59\x9c\x69\xa3\xda\xfd\xb8\x35\xa7\x25\x5e\x5f\x2e\x93\x4e\x93\x22\xec\xd3\xaf\x19\x0a\xb0\xf6\x0e"), "kaspatest:qxaqrlzlf6wes72en3568khahq66wf27tuhfxn5nytkd8tcep2c0vrse6gdmpks"),
-            (Address::new(Prefix::Mainnet, Version::PubKey, &[0u8; 32]),      "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e"),
-            (Address::new(Prefix::Mainnet, Version::PubKey, b"\x5f\xff\x3c\x4d\xa1\x8f\x45\xad\xcd\xd4\x99\xe4\x46\x11\xe9\xff\xf1\x48\xba\x69\xdb\x3c\x4e\xa2\xdd\xd9\x55\xfc\x46\xa5\x95\x22"), "kaspa:qp0l70zd5x85ttwd6jv7g3s3a8llzj96d8dncn4zmhv4tlzx5k2jyqh70xmfj"),
+            (Address::new(Prefix::Testnet, Version::PubKey, &[0u8; 32]),      "sedratest:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq6fwzl9v7"),
+            (Address::new(Prefix::Testnet, Version::PubKeyECDSA, &[0u8; 33]), "sedratest:qyqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqakr9lnhu"),
+            (Address::new(Prefix::Testnet, Version::PubKeyECDSA, b"\xba\x01\xfc\x5f\x4e\x9d\x98\x79\x59\x9c\x69\xa3\xda\xfd\xb8\x35\xa7\x25\x5e\x5f\x2e\x93\x4e\x93\x22\xec\xd3\xaf\x19\x0a\xb0\xf6\x0e"), "sedratest:qxaqrlzlf6wes72en3568khahq66wf27tuhfxn5nytkd8tcep2c0vrsn4ve6qtp"),
+            (Address::new(Prefix::Mainnet, Version::PubKey, &[0u8; 32]),      "sedra:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860"),
+            (Address::new(Prefix::Mainnet, Version::PubKey, b"\x5f\xff\x3c\x4d\xa1\x8f\x45\xad\xcd\xd4\x99\xe4\x46\x11\xe9\xff\xf1\x48\xba\x69\xdb\x3c\x4e\xa2\xdd\xd9\x55\xfc\x46\xa5\x95\x22"), "sedra:qp0l70zd5x85ttwd6jv7g3s3a8llzj96d8dncn4zmhv4tlzx5k2jyxy0n2axy"),
         ]
         // cspell:enable
     }
@@ -603,36 +618,52 @@ mod tests {
         }
     }
 
+    /// SEDRA (security back-port, upstream 2a47b249): a mainnet address with a valid checksum but the wrong payload
+    /// length must be rejected as an error, from a string and from Borsh, instead of crashing the node.
+    #[test]
+    fn sedra_wrong_payload_length_is_an_error_test() {
+        let bad = Address { prefix: Prefix::Mainnet, version: Version::PubKey, payload: PayloadVec::from_slice(&[7u8; 5]) };
+        let encoded: String = (&bad).into();
+        let parsed: Result<Address, AddressError> = encoded.as_str().try_into();
+        assert_eq!(parsed, Err(AddressError::InvalidPayloadLength { expected: 32, actual: 5 }), "{encoded}");
+        let bytes = borsh::to_vec(&bad).unwrap();
+        assert!(<Address as borsh::BorshDeserialize>::try_from_slice(&bytes).is_err());
+        // a correct address still parses
+        let good = Address::new(Prefix::Mainnet, Version::PubKey, &[7u8; 32]);
+        let good_str: String = (&good).into();
+        assert_eq!(Address::try_from(good_str.as_str()), Ok(good));
+    }
+
     #[test]
     fn test_errors() {
         // cspell:disable
-        let address_str: String = "kaspa:qqqqqqqqqqqqq1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e".to_string();
+        let address_str: String = "sedra:qqqqqqqqqqqqq1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860".to_string();
         let address: Result<Address, AddressError> = address_str.try_into();
         assert_eq!(Err(AddressError::DecodingError('1')), address);
 
         let invalid_char = 124u8 as char;
-        let address_str: String = format!("kaspa:qqqqqqqqqqqqq{invalid_char}qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e");
+        let address_str: String = format!("sedra:qqqqqqqqqqqqq{invalid_char}qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860");
         let address: Result<Address, AddressError> = address_str.try_into();
         assert_eq!(Err(AddressError::DecodingError(invalid_char)), address);
 
         let invalid_char = 129u8 as char;
-        let address_str: String = format!("kaspa:qqqqqqqqqqqqq{invalid_char}qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e");
+        let address_str: String = format!("sedra:qqqqqqqqqqqqq{invalid_char}qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860");
         let address: Result<Address, AddressError> = address_str.try_into();
         assert!(matches!(address, Err(AddressError::DecodingError(_))));
 
-        let address_str: String = "kaspa1:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e".to_string();
+        let address_str: String = "sedra1:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860".to_string();
         let address: Result<Address, AddressError> = address_str.try_into();
-        assert_eq!(Err(AddressError::InvalidPrefix("kaspa1".into())), address);
+        assert_eq!(Err(AddressError::InvalidPrefix("sedra1".into())), address);
 
-        let address_str: String = "kaspaqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e".to_string();
+        let address_str: String = "sedraqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860".to_string();
         let address: Result<Address, AddressError> = address_str.try_into();
         assert_eq!(Err(AddressError::MissingPrefix), address);
 
-        let address_str: String = "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4l".to_string();
+        let address_str: String = "sedra:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz86l".to_string();
         let address: Result<Address, AddressError> = address_str.try_into();
         assert_eq!(Err(AddressError::BadChecksum), address);
 
-        let address_str: String = "kaspa:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqkx9awp4e".to_string();
+        let address_str: String = "sedra:qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs45pz860".to_string();
         let address: Result<Address, AddressError> = address_str.try_into();
         assert_eq!(Err(AddressError::BadChecksum), address);
         // cspell:enable
@@ -650,7 +681,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     pub fn test_wasm_serde_constructor() {
-        let str = "kaspa:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjsgzthw5j";
+        let str = "sedra:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjkmnhmgmy";
         let a = Address::constructor(str);
         let value = to_value(&a).unwrap();
 
@@ -662,7 +693,7 @@ mod tests {
     #[cfg(target_arch = "wasm32")]
     #[wasm_bindgen_test]
     pub fn test_wasm_js_serde_object() {
-        let expected = Address::constructor("kaspa:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjsgzthw5j");
+        let expected = Address::constructor("sedra:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjkmnhmgmy");
 
         use web_sys::console;
         console::log_4(
@@ -674,7 +705,7 @@ mod tests {
 
         let obj = Object::new();
         obj.set("version", &JsValue::from_str("PubKey")).unwrap();
-        obj.set("prefix", &JsValue::from_str("kaspa")).unwrap();
+        obj.set("prefix", &JsValue::from_str("sedra")).unwrap();
         obj.set("payload", &JsValue::from_str("qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjsgzthw5j")).unwrap();
 
         assert_eq!(JsValue::from_str("object"), obj.js_typeof());
@@ -689,7 +720,7 @@ mod tests {
     pub fn test_wasm_serde_object() {
         use wasm_bindgen::convert::IntoWasmAbi;
 
-        let expected = Address::constructor("kaspa:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjsgzthw5j");
+        let expected = Address::constructor("sedra:qpauqsvk7yf9unexwmxsnmg547mhyga37csh0kj53q6xxgl24ydxjkmnhmgmy");
         let wasm_js_value: JsValue = expected.clone().into_abi().into();
 
         let actual = from_value(wasm_js_value).unwrap();

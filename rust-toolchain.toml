@@ -1,0 +1,5 @@
+# SEDRA: the compiler every build of this node uses (releases must be reproducible, see docs/RELEASE.md).
+# Changing it changes the release binaries: note it in SEDRA.md and docs/RELEASE.md.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"

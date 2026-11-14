@@ -109,6 +109,8 @@ impl ConsensusServices {
             params.prior_past_median_time_window_size(),
             params.sampled_past_median_time_window_size(),
             params.crescendo.past_median_time_sample_rate,
+            params.difficulty_reset_activation_daa_score,
+            params.difficulty_reset_window_blocks,
         );
         let depth_manager = BlockDepthManager::new(
             params.merge_depth(),
@@ -134,7 +136,8 @@ impl ConsensusServices {
             params.deflationary_phase_daa_score,
             params.pre_deflationary_phase_base_subsidy,
             params.bps(),
-        );
+        )
+        .with_treasury_allocation(params.treasury_allocation_windows, params.treasury_script_public_key);
 
         let mass_calculator = MassCalculator::new(
             params.mass_per_tx_byte,

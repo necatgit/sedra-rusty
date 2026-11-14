@@ -5,7 +5,10 @@ use crate::pb::{
 };
 use crate::{ConnectionInitializer, Router};
 use futures::FutureExt;
-use kaspa_core::{debug, info};
+use kaspa_core::{debug, info, warn};
+use parking_lot::Mutex;
+use std::collections::HashMap;
+use std::net::IpAddr;
 use kaspa_utils::networking::NetAddress;
 use kaspa_utils_tower::{
     counters::TowerConnectionCounters,
@@ -22,6 +25,62 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::transport::{Error as TonicError, Server as TonicServer};
 use tonic::{Request, Response, Status as TonicStatus, Streaming};
+
+// SEDRA (security back-port, upstream rusty-kaspa 2a47b249): bound pending inbound handshakes, globally and per source IP
+const MAX_PENDING_INBOUND_HANDSHAKES: usize = 32;
+const MAX_PENDING_INBOUND_HANDSHAKES_PER_IP: usize = 2;
+
+#[derive(Debug, Default)]
+struct PendingInboundHandshakes {
+    total: usize,
+    by_ip: HashMap<IpAddr, usize>,
+}
+
+impl PendingInboundHandshakes {
+    fn try_reserve(&mut self, ip: IpAddr) -> bool {
+        let ip_count = self.by_ip.get(&ip).copied().unwrap_or_default();
+        if self.total >= MAX_PENDING_INBOUND_HANDSHAKES || ip_count >= MAX_PENDING_INBOUND_HANDSHAKES_PER_IP {
+            return false;
+        }
+        self.total += 1;
+        self.by_ip.insert(ip, ip_count + 1);
+        true
+    }
+
+    fn release(&mut self, ip: IpAddr) {
+        self.total = self.total.checked_sub(1).expect("a pending inbound handshake reservation must exist");
+        let remove = {
+            let count = self.by_ip.get_mut(&ip).expect("a pending inbound handshake IP reservation must exist");
+            *count = count.checked_sub(1).expect("a pending inbound handshake IP reservation must exist");
+            *count == 0
+        };
+        if remove {
+            self.by_ip.remove(&ip);
+        }
+    }
+}
+
+/// Holds one reservation in [`PendingInboundHandshakes`] and releases it when dropped
+struct PendingInboundHandshakeGuard {
+    pending: Arc<Mutex<PendingInboundHandshakes>>,
+    ip: IpAddr,
+}
+
+impl PendingInboundHandshakeGuard {
+    fn try_new(pending: Arc<Mutex<PendingInboundHandshakes>>, ip: IpAddr) -> Option<Self> {
+        if pending.lock().try_reserve(ip) {
+            Some(Self { pending, ip })
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for PendingInboundHandshakeGuard {
+    fn drop(&mut self) {
+        self.pending.lock().release(self.ip);
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
@@ -51,6 +110,7 @@ pub struct ConnectionHandler {
     hub_sender: MpscSender<HubEvent>,
     initializer: Arc<dyn ConnectionInitializer>,
     counters: Arc<TowerConnectionCounters>,
+    pending_inbound_handshakes: Arc<Mutex<PendingInboundHandshakes>>,
 }
 
 impl ConnectionHandler {
@@ -59,7 +119,7 @@ impl ConnectionHandler {
         initializer: Arc<dyn ConnectionInitializer>,
         counters: Arc<TowerConnectionCounters>,
     ) -> Self {
-        Self { hub_sender, initializer, counters }
+        Self { hub_sender, initializer, counters, pending_inbound_handshakes: Default::default() }
     }
 
     /// Launches a P2P server listener loop
@@ -207,6 +267,12 @@ impl ProtoP2p for ConnectionHandler {
             return Err(TonicStatus::new(tonic::Code::InvalidArgument, "Incoming connection opening request has no remote address"));
         };
 
+        // SEDRA (security back-port, upstream 2a47b249): bound pending handshakes globally and per source IP before
+        // allocating the router and its channels.
+        let inbound_handshake_guard =
+            PendingInboundHandshakeGuard::try_new(self.pending_inbound_handshakes.clone(), remote_address.ip().to_canonical())
+                .ok_or_else(|| TonicStatus::resource_exhausted("too many pending inbound handshakes"))?;
+
         // Build the in/out pipes
         let (outgoing_route, outgoing_receiver) = mpsc_channel(Self::outgoing_network_channel_size());
         let incoming_stream = request.into_inner();
@@ -214,10 +280,65 @@ impl ProtoP2p for ConnectionHandler {
         // Build the router object
         let router = Router::new(remote_address, false, self.hub_sender.clone(), incoming_stream, outgoing_route).await;
 
-        // Notify the central Hub about the new peer
-        self.hub_sender.send(HubEvent::NewPeer(router)).await.expect("hub receiver should never drop before senders");
+        // SEDRA (security back-port, upstream 2a47b249): run the handshake in a task of its own instead of inside the hub
+        // event loop, and notify the hub only once it succeeded
+        let initializer = self.initializer.clone();
+        let hub_sender = self.hub_sender.clone();
+        tokio::spawn(async move {
+            // Hold the reservation until initialization and any failure cleanup complete
+            let _inbound_handshake_guard = inbound_handshake_guard;
+            match initializer.initialize_connection(router.clone()).await {
+                Ok(()) => {
+                    hub_sender.send(HubEvent::NewPeer(router)).await.expect("hub receiver should never drop before senders");
+                }
+                Err(err) => {
+                    router.try_sending_reject_message(&err).await;
+                    router.close().await;
+                    if matches!(err, ProtocolError::LoopbackConnection(_) | ProtocolError::PeerAlreadyExists(_)) {
+                        debug!("P2P, handshake failed for inbound peer {}: {}", router, err);
+                    } else {
+                        warn!("P2P, handshake failed for inbound peer {}: {}", router, err);
+                    }
+                }
+            }
+        });
 
         // Give tonic a receiver stream (messages sent to it will be forwarded to the network peer)
         Ok(Response::new(Box::pin(ReceiverStream::new(outgoing_receiver).map(Ok)) as Self::MessageStreamStream))
+    }
+}
+
+#[cfg(test)]
+mod sedra_backport_tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    /// SEDRA (security back-port, upstream 2a47b249; test ported from upstream): pending inbound handshakes are limited per
+    /// IP and in total, and slots are reused once released.
+    #[test]
+    fn pending_inbound_handshake_limits_and_reuses_slots_test() {
+        let pending = Arc::new(Mutex::new(PendingInboundHandshakes::default()));
+        let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+        let first = PendingInboundHandshakeGuard::try_new(pending.clone(), ip).unwrap();
+        let second = PendingInboundHandshakeGuard::try_new(pending.clone(), ip).unwrap();
+        assert!(PendingInboundHandshakeGuard::try_new(pending.clone(), ip).is_none(), "third handshake from one IP must be refused");
+
+        drop(first);
+        let replacement = PendingInboundHandshakeGuard::try_new(pending.clone(), ip).unwrap();
+        drop((second, replacement));
+
+        let mut guards = Vec::with_capacity(MAX_PENDING_INBOUND_HANDSHAKES);
+        for i in 0..MAX_PENDING_INBOUND_HANDSHAKES {
+            let ip = IpAddr::V6(Ipv6Addr::from(u128::try_from(i).unwrap()));
+            guards.push(PendingInboundHandshakeGuard::try_new(pending.clone(), ip).unwrap());
+        }
+        let next_ip = IpAddr::V6(Ipv6Addr::from(u128::try_from(MAX_PENDING_INBOUND_HANDSHAKES).unwrap()));
+        assert!(PendingInboundHandshakeGuard::try_new(pending.clone(), next_ip).is_none(), "global limit must be enforced");
+
+        drop(guards);
+        let pending = pending.lock();
+        assert_eq!(pending.total, 0);
+        assert!(pending.by_ip.is_empty());
     }
 }

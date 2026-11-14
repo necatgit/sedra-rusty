@@ -1336,6 +1336,63 @@ mod tests {
         }
     }
 
+    /// SEDRA (security back-port, upstream rusty-kaspa eb0a856d): coinbase transactions are rejected by the mempool.
+    #[test]
+    fn sedra_reject_coinbase_transaction_test() {
+        let consensus = ConsensusMock::new();
+        let mining_manager = MiningManager::new(TARGET_TIME_PER_BLOCK, true, MAX_BLOCK_MASS, None, Arc::new(MiningCounters::default()));
+        let transaction = Transaction::new(TX_VERSION, vec![], vec![], 0, kaspa_consensus_core::subnets::SUBNETWORK_ID_COINBASE, 0, vec![]);
+        let transaction_id = transaction.id();
+        let result = into_mempool_result(mining_manager.validate_and_insert_transaction(
+            &consensus,
+            transaction,
+            Priority::Low,
+            Orphan::Allowed,
+            RbfPolicy::Allowed,
+        ));
+        assert_eq!(result, Err(RuleError::RejectCoinbase(transaction_id)));
+        assert!(mining_manager.get_transaction(&transaction_id, TransactionQuery::All).is_none());
+    }
+
+    /// SEDRA (security back-port, upstream rusty-kaspa 778b21e2): a transaction spending a non-existent output index of a
+    /// mempool transaction is rejected as an error instead of crashing the node.
+    #[test]
+    fn sedra_reject_impossible_outpoint_test() {
+        let consensus = Arc::new(ConsensusMock::new());
+        let mining_manager = MiningManager::new(TARGET_TIME_PER_BLOCK, false, MAX_BLOCK_MASS, None, Arc::new(MiningCounters::default()));
+        let parent = create_transaction_with_utxo_entry(0, 0);
+        let parent_id = parent.tx.id();
+        assert_eq!(parent.tx.outputs.len(), 1);
+        into_mempool_result(mining_manager.validate_and_insert_mutable_transaction(
+            consensus.as_ref(),
+            parent,
+            Priority::Low,
+            Orphan::Allowed,
+            RbfPolicy::Forbidden,
+        ))
+        .unwrap();
+        let (script_public_key, redeem_script) = op_true_script();
+        let signature_script = pay_to_script_hash_signature_script(redeem_script, vec![]).unwrap();
+        let input = TransactionInput::new(TransactionOutpoint::new(parent_id, 5), signature_script, MAX_TX_IN_SEQUENCE_NUM, 1);
+        let child = Transaction::new(
+            TX_VERSION,
+            vec![input],
+            vec![TransactionOutput::new(1_000, script_public_key)],
+            0,
+            SUBNETWORK_ID_NATIVE,
+            0,
+            vec![],
+        );
+        let result = into_mempool_result(mining_manager.validate_and_insert_transaction(
+            consensus.as_ref(),
+            child,
+            Priority::Low,
+            Orphan::Allowed,
+            RbfPolicy::Forbidden,
+        ));
+        assert_eq!(result, Err(RuleError::RejectImpossibleOutpoint));
+    }
+
     fn create_transaction_with_utxo_entry(i: u32, block_daa_score: u64) -> MutableTransaction {
         let previous_outpoint = TransactionOutpoint::new(Hash::default(), i);
         let (script_public_key, redeem_script) = op_true_script();

@@ -43,6 +43,15 @@ fn try_git_head() -> Option<GitHead> {
         let head_path = git_folder.join("HEAD");
         if head_path.is_file() {
             let head = std::fs::read_to_string(&head_path).ok()?;
+            if !head.starts_with("ref: ") {
+                // SEDRA: a detached HEAD (e.g. a release tag checked out) holds the commit itself. Upstream embedded no
+                // commit in that case, so release builds could not show which commit they came from.
+                if let (Some(full_hash), Some(short_hash)) = (full_hash, short_hash) {
+                    let head_path = head_path.to_str().unwrap().to_string();
+                    return Some(GitHead { head_ref_path: head_path.clone(), head_path, full_hash, short_hash });
+                }
+                return None;
+            }
             if head.starts_with("ref: ") {
                 let head_ref_path = head.trim_start_matches("ref: ");
                 let head_ref_path = git_folder.join(head_ref_path.trim());

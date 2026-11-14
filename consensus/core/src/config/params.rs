@@ -15,6 +15,46 @@ use std::cmp::min;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ForkActivation(u64);
 
+/// SEDRA v2.0.0: one treasury allocation window. Blocks whose own DAA score lies in the half-open range
+/// `[activation_daa_score, activation_daa_score + window_blocks)` carry an extra coinbase output of `per_block_seep`
+/// to the treasury script. Mirrors `TreasuryAllocation*` in sedrad v2.0.0 `domain/dagconfig/params.go`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TreasuryAllocationWindow {
+    pub activation_daa_score: u64,
+    pub window_blocks: u64,
+    pub per_block_seep: u64,
+}
+
+/// SEDRA: mirrors sedrad's `blockInDifficultyResetWindow` exactly (window == 0 means never).
+pub fn block_in_difficulty_reset_window(block_daa_score: u64, activation_daa_score: u64, window_blocks: u64) -> bool {
+    if window_blocks == 0 || block_daa_score < activation_daa_score {
+        return false;
+    }
+    block_daa_score - activation_daa_score < window_blocks
+}
+
+/// SEDRA: mirrors sedrad's `blockInTreasuryAllocationWindow` exactly, including its overflow guard.
+pub fn block_in_treasury_allocation_window(block_daa_score: u64, activation_daa_score: u64, window_blocks: u64) -> bool {
+    if window_blocks == 0 {
+        return false;
+    }
+    let end = activation_daa_score.checked_add(window_blocks).unwrap_or(u64::MAX);
+    block_daa_score >= activation_daa_score && block_daa_score < end
+}
+
+/// SEDRA v2.0.0 mainnet treasury allocation, "exactly as mined" (sedrad v2.0.0 `params.go`, 4a1153d).
+pub const SEDRA_MAINNET_TREASURY_ALLOCATION_WINDOWS: [TreasuryAllocationWindow; 2] = [
+    TreasuryAllocationWindow { activation_daa_score: 53_632_372, window_blocks: 200, per_block_seep: 1_000_000_000_000_000 },
+    TreasuryAllocationWindow { activation_daa_score: 53_633_267, window_blocks: 454, per_block_seep: 100_000_000_000_000 },
+];
+
+/// SEDRA v2.0.0 mainnet treasury script (P2SH, script version 0) of
+/// `sedra:pp8a4l47q0qjwlwgqvnmp5ppssk6zpn9hat58vaw6jkxkee2aqduue9252wc3`.
+pub const SEDRA_MAINNET_TREASURY_SCRIPT_PUBLIC_KEY: [u8; 35] = [
+    0xaa, 0x20, 0x4f, 0xda, 0xfe, 0xbe, 0x03, 0xc1, 0x27, 0x7d, 0xc8, 0x03, 0x27, 0xb0, 0xd0, 0x21, 0x84, 0x2d, 0xa1, 0x06,
+    0x65, 0xbf, 0x57, 0x43, 0xb3, 0xae, 0xd4, 0xac, 0x6b, 0x67, 0x2a, 0xe8, 0x1b, 0xce, 0x87,
+];
+
 impl ForkActivation {
     const NEVER: u64 = u64::MAX;
     const ALWAYS: u64 = 0;
@@ -255,6 +295,15 @@ pub struct Params {
 
     pub crescendo: CrescendoParams,
     pub crescendo_activation: ForkActivation,
+
+    /// SEDRA v2.0.0 fair-restart difficulty reset: blocks with DAA score in
+    /// `[difficulty_reset_activation_daa_score, + difficulty_reset_window_blocks)` require the genesis bits.
+    /// Dormant when either is 0.
+    pub difficulty_reset_activation_daa_score: u64,
+    pub difficulty_reset_window_blocks: u64,
+    /// SEDRA v2.0.0 treasury allocation windows (empty = dormant) and the treasury script (empty = dormant).
+    pub treasury_allocation_windows: &'static [TreasuryAllocationWindow],
+    pub treasury_script_public_key: &'static [u8],
 }
 
 impl Params {
@@ -469,26 +518,10 @@ impl From<NetworkId> for Params {
 
 pub const MAINNET_PARAMS: Params = Params {
     dns_seeders: &[
-        // This DNS seeder is run by Denis Mashkevich
-        "mainnet-dnsseed-1.kaspanet.org",
-        // This DNS seeder is run by Denis Mashkevich
-        "mainnet-dnsseed-2.kaspanet.org",
-        // This DNS seeder is run by Georges Künzli
-        "seeder1.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder2.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder3.kaspad.net",
-        // This DNS seeder is run by Georges Künzli
-        "seeder4.kaspad.net",
-        // This DNS seeder is run by Tim
-        "kaspadns.kaspacalc.net",
-        // This DNS seeder is run by supertypo
-        "n-mainnet.kaspa.ws",
-        // This DNS seeder is run by -gerri-
-        "dnsseeder-kaspa-mainnet.x-con.at",
-        // This DNS seeder is run by H@H
-        "ns-mainnet.kaspa-dnsseeder.net",
+        // Sedra DNS seeders (sedrad v2.0.0 params.go)
+        "sedra-seed-1.sedracoin.com",
+        "sedra-seed-2.sedracoin.com",
+        "sedra-seed-3.sedracoin.com",
     ],
     net: NetworkId::new(NetworkType::Mainnet),
     genesis: GENESIS,
@@ -498,7 +531,7 @@ pub const MAINNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -538,20 +571,16 @@ pub const MAINNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // Roughly 2025-05-05 1500 UTC
-    crescendo_activation: ForkActivation::new(110_165_000),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    // SEDRA v2.0.0 relaunch rules, exactly as in sedrad v2.0.0 params.go
+    difficulty_reset_activation_daa_score: 53_625_512,
+    difficulty_reset_window_blocks: 2641,
+    treasury_allocation_windows: &SEDRA_MAINNET_TREASURY_ALLOCATION_WINDOWS,
+    treasury_script_public_key: &SEDRA_MAINNET_TREASURY_SCRIPT_PUBLIC_KEY,
 };
 
 pub const TESTNET_PARAMS: Params = Params {
-    dns_seeders: &[
-        // This DNS seeder is run by Tiram
-        "seeder1-testnet.kaspad.net",
-        // This DNS seeder is run by -gerri-
-        "dnsseeder-kaspa-testnet.x-con.at",
-        // This DNS seeder is run by H@H
-        "ns-testnet10.kaspa-dnsseeder.net",
-        // This DNS seeder is run by supertypo
-        "n-testnet-10.kaspa.ws",
-    ],
+    dns_seeders: &[], // Sedra has no testnet seeders
     net: NetworkId::with_suffix(NetworkType::Testnet, 10),
     genesis: TESTNET_GENESIS,
     prior_ghostdag_k: LEGACY_DEFAULT_GHOSTDAG_K,
@@ -560,7 +589,7 @@ pub const TESTNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -599,7 +628,11 @@ pub const TESTNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // 18:30 UTC, March 6, 2025
-    crescendo_activation: ForkActivation::new(88_657_000),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    difficulty_reset_activation_daa_score: 0,
+    difficulty_reset_window_blocks: 0,
+    treasury_allocation_windows: &[],
+    treasury_script_public_key: &[],
 };
 
 pub const SIMNET_PARAMS: Params = Params {
@@ -610,7 +643,7 @@ pub const SIMNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
 
     //
     // ~~~~~~~~~~~~~~~~~~ BPS dependent constants ~~~~~~~~~~~~~~~~~~
@@ -648,7 +681,11 @@ pub const SIMNET_PARAMS: Params = Params {
     pruning_proof_m: PRUNING_PROOF_M,
 
     crescendo: CRESCENDO,
-    crescendo_activation: ForkActivation::always(),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    difficulty_reset_activation_daa_score: 0,
+    difficulty_reset_window_blocks: 0,
+    treasury_allocation_windows: &[],
+    treasury_script_public_key: &[],
 };
 
 pub const DEVNET_PARAMS: Params = Params {
@@ -661,7 +698,7 @@ pub const DEVNET_PARAMS: Params = Params {
     max_difficulty_target: MAX_DIFFICULTY_TARGET,
     max_difficulty_target_f64: MAX_DIFFICULTY_TARGET_AS_F64,
     prior_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE,
-    min_difficulty_window_size: MIN_DIFFICULTY_WINDOW_SIZE,
+    min_difficulty_window_size: LEGACY_DIFFICULTY_WINDOW_SIZE, // Go node: genesis bits until the full 2641-block window exists
     prior_max_block_parents: 10,
     prior_mergeset_size_limit: (LEGACY_DEFAULT_GHOSTDAG_K as u64) * 10,
     prior_merge_depth: 3600,
@@ -701,5 +738,9 @@ pub const DEVNET_PARAMS: Params = Params {
 
     crescendo: CRESCENDO,
     // TODO: Set this to always after the fork
-    crescendo_activation: ForkActivation::never(),
+    crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
+    difficulty_reset_activation_daa_score: 0,
+    difficulty_reset_window_blocks: 0,
+    treasury_allocation_windows: &[],
+    treasury_script_public_key: &[],
 };

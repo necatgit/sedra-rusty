@@ -15,10 +15,7 @@ use kaspa_consensus_core::block::Block;
 use kaspa_consensus_core::config::Config;
 use kaspa_consensus_core::errors::block::RuleError;
 use kaspa_consensus_core::tx::{Transaction, TransactionId};
-use kaspa_consensus_core::{
-    api::{BlockValidationFuture, BlockValidationFutures},
-    network::NetworkType,
-};
+use kaspa_consensus_core::api::{BlockValidationFuture, BlockValidationFutures};
 use kaspa_consensus_notify::{
     notification::{Notification, PruningPointUtxoSetOverrideNotification},
     root::ConsensusNotificationRoot,
@@ -510,7 +507,7 @@ impl FlowContext {
             return Err(err)?;
         }
         // Broadcast as soon as the block has been validated and inserted into the DAG
-        self.hub.broadcast(make_message!(Payload::InvRelayBlock, InvRelayBlockMessage { hash: Some(hash.into()) })).await;
+        self.hub.broadcast(make_message!(Payload::InvRelayBlock, InvRelayBlockMessage { hash: Some(hash.into()) }), None).await;
 
         let daa_score = block.header.daa_score;
         self.on_new_block(consensus, Default::default(), block, virtual_state_task).await;
@@ -576,7 +573,7 @@ impl FlowContext {
             .iter()
             .map(|(b, _)| make_message!(Payload::InvRelayBlock, InvRelayBlockMessage { hash: Some(b.hash().into()) }))
             .collect();
-        self.hub.broadcast_many(msgs).await;
+        self.hub.broadcast_many(msgs, None).await;
 
         // Process blocks in topological order
         blocks.sort_by(|a, b| a.0.header.blue_work.partial_cmp(&b.0.header.blue_work).unwrap());
@@ -762,7 +759,7 @@ impl ConnectionInitializer for FlowContext {
         // Perform the handshake
         let peer_version_message = handshake.handshake(self_version_message.into()).await?;
         // Get time_offset as accurate as possible by computing right after the handshake
-        let time_offset = unix_now() as i64 - peer_version_message.timestamp;
+        let time_offset = handshake_time_offset(unix_now() as i64, peer_version_message.timestamp);
 
         let peer_version: Version = peer_version_message.try_into()?;
         router.set_identity(peer_version.id);
@@ -782,7 +779,8 @@ impl ConnectionInitializer for FlowContext {
         debug!("protocol versions - self: {}, peer: {}", PROTOCOL_VERSION, peer_version.protocol_version);
 
         // Register all flows according to version
-        let connect_only_new_versions = self.config.net.network_type() != NetworkType::Testnet;
+        // SEDRA: Sedra's Go nodes speak protocol v5 only, so older protocol versions stay enabled on every network.
+        let connect_only_new_versions = false;
 
         let (flows, applied_protocol_version) = if connect_only_new_versions {
             match peer_version.protocol_version {
@@ -836,5 +834,23 @@ impl ConnectionInitializer for FlowContext {
         // it is considered a protocol error and the connection will disconnect
 
         Ok(())
+    }
+}
+
+/// SEDRA (security back-port, upstream rusty-kaspa 2a47b249): the peer chooses `timestamp`, so the time offset must be
+/// computed without overflow. The release build has overflow checks, and a panic ends the whole node.
+fn handshake_time_offset(now: i64, peer_timestamp: i64) -> i64 {
+    now.saturating_sub(peer_timestamp)
+}
+
+#[cfg(test)]
+mod sedra_backport_tests {
+    use super::handshake_time_offset;
+
+    #[test]
+    fn handshake_time_offset_does_not_overflow_test() {
+        assert_eq!(handshake_time_offset(1_000, 400), 600);
+        assert_eq!(handshake_time_offset(1_000, i64::MIN), i64::MAX);
+        assert_eq!(handshake_time_offset(-1_000, i64::MAX), i64::MIN);
     }
 }

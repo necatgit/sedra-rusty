@@ -33,6 +33,10 @@ pub enum PruningImportError {
     #[error("the proof doesn't have sufficient blue work in order to replace the current DAG")]
     PruningProofInsufficientBlueWork,
 
+    // SEDRA (security back-port, upstream d6333234 part): an empty level used to reach an unwrap on None
+    #[error("the pruning proof has no headers at level {0}")]
+    PruningProofEmptyLevel(BlockLevel),
+
     #[error("the pruning proof doesn't have any shared blocks with the known DAGs, but doesn't have enough headers from levels higher than the existing block levels.")]
     PruningProofNotEnoughHeaders,
 
@@ -80,6 +84,9 @@ pub enum PruningImportError {
 
     #[error("a past pruning point has not been pointed at")]
     UnpointedPruningPoint,
+
+    #[error("got trusted block {0} in the future of the pruning point {1}")]
+    TrustedBlockInPruningPointFuture(Hash, Hash),
 }
 
 pub type PruningImportResult<T> = std::result::Result<T, PruningImportError>;

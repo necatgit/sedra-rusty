@@ -6,6 +6,10 @@ pub enum ConversionError {
     #[error("General p2p conversion error")]
     General,
 
+    /// SEDRA (security back-port, upstream rusty-kaspa 2a47b249)
+    #[error("p2p conversion size too large error")]
+    Size,
+
     #[error("Optional field is None while expected to be Some")]
     NoneValue,
 

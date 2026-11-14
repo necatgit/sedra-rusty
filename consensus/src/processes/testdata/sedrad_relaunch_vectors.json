@@ -1,0 +1,157 @@
+{
+ "computed_bits": 454033407,
+ "genesis_bits": 525264379,
+ "source": "sedrad v2.0.0 (4a1153d): difficultyManager.applyDifficultyReset and coinbaseManager.treasuryAllocationOutput, MainnetParams",
+ "vectors": [
+  {
+   "daa_score": 0,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 1,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53000000,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53625511,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53625512,
+   "bits_after_reset": 525264379,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53625513,
+   "bits_after_reset": 525264379,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53628152,
+   "bits_after_reset": 525264379,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53628153,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53628154,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53632371,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53632372,
+   "bits_after_reset": 454033407,
+   "treasury_value": 1000000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53632373,
+   "bits_after_reset": 454033407,
+   "treasury_value": 1000000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53632472,
+   "bits_after_reset": 454033407,
+   "treasury_value": 1000000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53632571,
+   "bits_after_reset": 454033407,
+   "treasury_value": 1000000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53632572,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53632573,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53632919,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53633266,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53633267,
+   "bits_after_reset": 454033407,
+   "treasury_value": 100000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53633268,
+   "bits_after_reset": 454033407,
+   "treasury_value": 100000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53633494,
+   "bits_after_reset": 454033407,
+   "treasury_value": 100000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53633720,
+   "bits_after_reset": 454033407,
+   "treasury_value": 100000000000000,
+   "treasury_script": "aa204fdafebe03c1277dc80327b0d021842da10665bf5743b3aed4ac6b672ae81bce87"
+  },
+  {
+   "daa_score": 53633721,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 53633722,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  },
+  {
+   "daa_score": 61000000,
+   "bits_after_reset": 454033407,
+   "treasury_value": null,
+   "treasury_script": null
+  }
+ ]
+}

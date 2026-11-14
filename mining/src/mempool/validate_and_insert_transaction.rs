@@ -23,12 +23,16 @@ impl Mempool {
         mut transaction: MutableTransaction,
         rbf_policy: RbfPolicy,
     ) -> RuleResult<TransactionPreValidation> {
+        // SEDRA (security back-port, upstream rusty-kaspa eb0a856d): coinbase transactions never belong in the mempool
+        if transaction.tx.is_coinbase() {
+            return Err(kaspa_mining_errors::mempool::RuleError::RejectCoinbase(transaction.tx.id()));
+        }
         self.validate_transaction_unacceptance(&transaction)?;
         // Populate mass and estimated_size in the beginning, it will be used in multiple places throughout the validation and insertion.
         transaction.calculated_non_contextual_masses = Some(consensus.calculate_transaction_non_contextual_masses(&transaction.tx));
         self.validate_transaction_in_isolation(&transaction)?;
         let feerate_threshold = self.get_replace_by_fee_constraint(&transaction, rbf_policy)?;
-        self.populate_mempool_entries(&mut transaction);
+        self.populate_mempool_entries(&mut transaction)?;
         Ok(TransactionPreValidation { transaction, feerate_threshold })
     }
 
