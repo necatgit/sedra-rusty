@@ -30,8 +30,8 @@ This only shows that the file arrived intact. That the binary really comes from 
 rebuilding it (next section) and comparing the checksums. Results of independent rebuilds are collected in the release
 issue; a match by someone other than the publisher is worth more than any signature.
 
-Release tags are not signed yet. Once a signing key is set up, its fingerprint is published here and in the project
-repository before the first signed tag.
+Release tags carry the prefix `sedra-` (for example `sedra-v0.1.0`). This repository contains the history of upstream
+rusty-kaspa, including its own tags `v0.1.0` and later, so a plain version tag would name a different commit.
 
 ## Verify the tag signature
 
@@ -41,7 +41,7 @@ listed as a signing key on the GitHub account `necatgit`:
 
 ```
 curl -sO https://puddlepool.com/keys/allowed_signers
-git -c gpg.ssh.allowedSignersFile=allowed_signers verify-tag v0.1.0
+git -c gpg.ssh.allowedSignersFile=allowed_signers verify-tag sedra-v0.1.0
 ```
 
 A good signature shows who made the tag. Whether the binaries match the source is shown only by rebuilding them
@@ -95,7 +95,11 @@ claimed, or the published binary is not what the source produces. Both must be f
 
 1. Full test run on the release commit (`cargo test --release --no-fail-fast --workspace --exclude kaspa-wasm
    --exclude kaspa-wallet-pskt`), result recorded in the release notes.
-2. Set the release in `core/src/kaspad_env.rs` (`sedra_release`), commit, and sign the tag with the release key
-   (`git -c gpg.format=ssh -c user.signingkey=<private key file> tag -s vX.Y.Z -m "sedra-rusty vX.Y.Z"`).
-3. `contrib/reproducible/build-in-docker.sh` on two different machines; both `SHA256SUMS` must match.
-4. Publish the archive, `SHA256SUMS` and the release notes; open the release issue for independent rebuilds.
+2. Cut the release branch `release-X.Y.Z` from `dev`; set the release in `core/src/kaspad_env.rs` (`sedra_release`)
+   there. Only release fixes and docs go on it.
+3. Merge it into `main` as a merge commit (`git merge --no-ff`) and sign the tag `sedra-vX.Y.Z` on that commit with the
+   release key. The key stays on its own machine: the tag text is built where the repository is, signed on the key's machine
+   with `ssh-keygen -Y sign -f <key> -n git`, and the signature is appended with `git mktag`; `verify-tag` must show a good
+   signature before the tag is pushed. Then merge the release branch back into `dev` and delete it.
+4. `contrib/reproducible/build-in-docker.sh` on two different machines; both `SHA256SUMS` must match.
+5. Publish the archive, `SHA256SUMS` and the release notes; open the release issue for independent rebuilds.

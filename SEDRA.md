@@ -6,12 +6,14 @@ moves Sedra to the Rust codebase. It is part of the
 [Sedra merged-mining project](https://github.com/necatgit/sedra-merged-mining) (public from late November 2026); the reasoning is in its
 `research/0004-rust-path.md`.
 
-**Status: work in progress. Not for mainnet use.**
+**Status: release 0.1.0 (2026-11-14), the same consensus rules as sedrad v2.0.0. Merged mining is not part of it.**
 
 ## Branches
 
-- `main`: unmodified upstream rusty-kaspa v1.0.1, as a reference point.
-- `dev`: Sedra changes. Every change is listed below.
+- `main`: releases only; each release is a merge commit with a signed tag `sedra-vX.Y.Z`.
+- `dev`: Sedra changes, integrated. Every change is listed below.
+- Feature branches off `dev`, for example `m10-auxpow` (merged mining, not in a release yet).
+- Unmodified upstream rusty-kaspa v1.0.1 is the tag `v1.0.1`.
 
 ## Goal of Step 1
 
