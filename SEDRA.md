@@ -6,7 +6,7 @@ moves Sedra to the Rust codebase. It is part of the
 [Sedra merged-mining project](https://github.com/necatgit/sedra-merged-mining) (public from late November 2026); the reasoning is in its
 `research/0004-rust-path.md`.
 
-**Status: release 0.1.0 (2026-11-14), the same consensus rules as sedrad v2.0.0. Merged mining is not part of it.**
+**Status: release 0.1.1 (2026-11-14), the same consensus rules as sedrad v2.0.0. Merged mining is not part of it.**
 
 ## Branches
 
@@ -99,7 +99,7 @@ removing Kaspa-specific RPC data (mainnet timestamp samples).
 
 ## Releases
 
-`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
+`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (currently `0.1.1`). `kaspad --version`
 and the startup log show it with the upstream base and the commit, e.g. `0.1.0 (rusty-kaspa v1.0.1, commit
 9cb74efc1234)`. The P2P user agent stays the upstream `kaspad:1.0.1`, so the handshake with the Go nodes is unchanged.
 

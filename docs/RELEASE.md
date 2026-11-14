@@ -82,8 +82,11 @@ from the published one.
 - 2026-11-10, commit `527b4ca5` (branch `release-0.1.0`): the container route `build-in-docker.sh` with rootless
   Podman 4.9.3 on the dev box (WSL), from a fresh clone at a detached HEAD: build 5 min, archive `94e80d7e…`, binary
   `ec71ba49…`, `kaspad --version` = `0.1.0 (rusty-kaspa v1.0.1, commit 527b4ca537e7)`. Two fixes were needed for
-  Podman: a fully qualified base image name and `--userns=keep-id`. The same build on a second machine is still to
-  be run; until it matches, a match across machines is the goal, not a tested property.
+  Podman: a fully qualified base image name and `--userns=keep-id`.
+- 2026-11-14, tag `sedra-v0.1.0` (`d20f07be`): `build-in-docker.sh` on two different machines, Ubuntu 24.04 with
+  Podman 4.9.3 (WSL) and Ubuntu 26.04 with Podman 5.7.0 (a VM): identical `SHA256SUMS` (archive `04cd6669…`, binary
+  `3113bfe4…`). In 0.1.0 the script ended with exit code 1 after a complete build, because its last step,
+  `kaspad --version`, exits with 1 after printing (upstream behaviour); fixed in 0.1.1.
 
 ## If your checksum differs
 
@@ -96,7 +99,8 @@ claimed, or the published binary is not what the source produces. Both must be f
 1. Full test run on the release commit (`cargo test --release --no-fail-fast --workspace --exclude kaspa-wasm
    --exclude kaspa-wallet-pskt`), result recorded in the release notes.
 2. Cut the release branch `release-X.Y.Z` from `dev`; set the release in `core/src/kaspad_env.rs` (`sedra_release`)
-   there. Only release fixes and docs go on it.
+   there. Only release fixes and docs go on it. An urgent fix while `dev` holds unreleased work goes on a hotfix
+   branch `hotfix-X.Y.Z` cut from `main` instead, and follows the same steps.
 3. Merge it into `main` as a merge commit (`git merge --no-ff`) and sign the tag `sedra-vX.Y.Z` on that commit with the
    release key. The key stays on its own machine: the tag text is built where the repository is, signed on the key's machine
    with `ssh-keygen -Y sign -f <key> -n git`, and the signature is appended with `git mktag`; `verify-tag` must show a good

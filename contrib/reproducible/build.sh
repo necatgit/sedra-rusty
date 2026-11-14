@@ -54,4 +54,5 @@ tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owne
     -C "$ROOT/dist" -cf - "$NAME" | gzip -n -9 > "$ROOT/dist/$NAME.tar.gz"
 
 ( cd "$ROOT/dist" && sha256sum "$NAME.tar.gz" "$NAME/kaspad" > SHA256SUMS && cat SHA256SUMS )
-"$STAGE/kaspad" --version
+# SEDRA: kaspad exits 1 after printing the version (upstream clap handling), which made this script fail
+"$STAGE/kaspad" --version || true
