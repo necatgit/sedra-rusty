@@ -1,7 +1,7 @@
 # AGENTS.md: working rules for sedra-rusty
 
 These rules apply to people and AI agents alike. They follow the project rules in
-[necatgit/sedra-merged-mining](https://github.com/necatgit/sedra-merged-mining) (`AGENTS.md` there; public from late November 2026); this file adds
+[necatgit/sedra-project](https://github.com/necatgit/sedra-project) (`AGENTS.md` there; public from late November 2026); this file adds
 what is specific to node code. `SEDRA.md` lists every change from upstream.
 
 ## Consensus first
