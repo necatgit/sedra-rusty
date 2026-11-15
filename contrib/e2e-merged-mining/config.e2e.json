@@ -1,0 +1,58 @@
+﻿{
+  "logging": {
+    "level": "info",
+    "enableConsoleLog": true,
+    "enableConsoleColors": false,
+    "logFile": "",
+    "logBaseDirectory": "logs",
+    "perPoolLogFile": false
+  },
+  "banning": { "manager": "Integrated", "banOnJunkReceive": false, "banOnInvalidShares": false },
+  "persistence": {
+    "postgres": {
+      "host": "127.0.0.1",
+      "port": 5433,
+      "user": "miningcore",
+      "password": "e2e-local-only",
+      "database": "miningcore"
+    }
+  },
+  "paymentProcessing": { "enabled": false, "interval": 600, "shareRecoveryFile": "recovered-shares.txt" },
+  "api": { "enabled": true, "listenAddress": "127.0.0.1", "port": 4001 },
+  "clusterName": "e2e",
+  "pools": [
+    {
+      "id": "e2e",
+      "enabled": true,
+      "coin": "kaspa",
+      "address": "kaspadev:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zlk3xwlwv",
+      "blockRefreshInterval": 500,
+      "jobRebroadcastTimeout": 10,
+      "clientConnectionTimeout": 600,
+      "banning": { "enabled": false },
+      "ports": {
+        "5599": { "name": "e2e fixed", "listenAddress": "<windows host ip on the WSL interface>", "difficulty": 1 }
+      },
+      "daemons": [ { "host": "127.0.0.1", "port": 16610, "http2": true } ],
+      "paymentProcessing": { "enabled": false, "payoutScheme": "PPLNS" },
+      "extra": {
+        "maxActiveJobs": 64,
+        "extraData": "e2e",
+        "extraNonce1Size": 2,
+        "additionalMergedMining": [
+          {
+            "enabled": true,
+            "coin": "sedra",
+            "host": "127.0.0.1",
+            "port": 22610,
+            "address": "sedradev:qqenxvenxvenxvenxvenxvenxvenxvenxvenxvenxvenxvenxvenxyzga8hst",
+            "extraData": "e2e-aux",
+            "minimumConfirmations": 10,
+            "payoutScheme": "PPLNS"
+          }
+        ]
+      }
+    }
+  ]
+}
+
