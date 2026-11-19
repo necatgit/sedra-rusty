@@ -1,7 +1,7 @@
 # AGENTS.md: working rules for sedra-rusty
 
 These rules apply to people and AI agents alike. They follow the project rules in
-[necatgit/sedra-merged-mining](https://github.com/necatgit/sedra-merged-mining) (`AGENTS.md` there); this file adds
+[necatgit/sedra-project](https://github.com/necatgit/sedra-project) (`AGENTS.md` there; public from late November 2026); this file adds
 what is specific to node code. `SEDRA.md` lists every change from upstream.
 
 ## Consensus first
@@ -18,7 +18,11 @@ what is specific to node code. `SEDRA.md` lists every change from upstream.
 
 ## Branches, commits, pushes
 
-- `main` stays unmodified upstream v1.0.1. All work goes to `dev`.
+- Branch model (Git Flow, since 2026-11-14): `main` holds releases only, each a merge commit with a signed tag
+  `sedra-vX.Y.Z`. `dev` is the integration branch; all work goes there or to a feature branch off `dev` (for example
+  `m10-auxpow`) that merges back. A release branch `release-X.Y.Z` is cut from `dev`, takes only release fixes, docs
+  and the version number, then merges into `main` (tagged) and back into `dev`, and is deleted. Unmodified upstream
+  v1.0.1 is the tag `v1.0.1`.
 - Push only after a successful build and the full test run, and report the real results in the commit message or issue.
 - Commits are authored by **Nec** with the GitHub noreply address. Check `git config user.name` before committing.
 - Ask first before bigger changes: consensus rules, the base version, protocol versions, or anything that affects how
@@ -32,8 +36,8 @@ cargo build --release --bin kaspad
 cargo test --release --workspace --exclude kaspa-wasm --exclude kaspa-wallet-pskt
 ```
 
-- Compare against the recorded baseline of unmodified v1.0.1. A failure that also happens on `main` is upstream, not
-  ours; a new failure is ours and must be fixed or explained.
+- Compare against the recorded baseline of unmodified v1.0.1. A failure that also happens on the tag `v1.0.1` is upstream,
+  not ours; a new failure is ours and must be fixed or explained.
 - Never claim something was built or tested unless it was actually run.
 
 ## Safety

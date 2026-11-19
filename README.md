@@ -12,7 +12,15 @@ mining with Kaspa, is a separate hard fork that needs agreement first; nothing o
 
 ## Status
 
-**Work in progress. Not yet released.** Milestones of step 1:
+**Released: [0.1.1](https://github.com/necatgit/sedra-rusty/releases/latest)**, the same consensus rules as Sedra
+mainnet today (sedrad v2.0.0). Merged mining is not part of it.
+
+| Release | Date | What changed |
+|---|---|---|
+| 0.1.1 | 2026-11-14 | This README and the release docs show the release; the reproducible build script no longer ends with exit code 1. Node behaviour unchanged. |
+| 0.1.0 | 2026-11-14 | First release. |
+
+Milestones of step 1:
 
 | Milestone | Result |
 |---|---|
@@ -25,10 +33,25 @@ mining with Kaspa, is a separate hard fork that needs agreement first; nothing o
 | M6 | The two v2.0.0 relaunch rules (difficulty reset, treasury outputs) behave exactly like sedrad |
 | M7 | Same UTXO commitment, supply, balances and UTXOs as the Go node |
 | M8 | Blocks mined by this node are accepted by a Go node and vice versa (private test network) |
-| M9 | Seven days next to Go nodes on mainnet data with no divergence: **running until 2026-11-14** |
+| M9 | Seven days next to a Go node on mainnet data (2026-11-07 to 11-14): 10,064 checks, no divergence; supply and treasury identical in every comparison |
 
 Security fixes from later rusty-kaspa releases are carried over and listed in `SEDRA.md`; the full test suite passes.
 Evidence for each milestone is in the research notes of the project.
+
+## Run a node
+
+Linux amd64. Download the archive and `SHA256SUMS` from the
+[latest release](https://github.com/necatgit/sedra-rusty/releases/latest), check them as described in
+[docs/RELEASE.md](docs/RELEASE.md), then:
+
+```
+tar xzf sedra-rusty-<release>-linux-amd64.tar.gz
+cd sedra-rusty-<release>-linux-amd64
+./kaspad --utxoindex
+```
+
+The first sync takes a few minutes; `--utxoindex` is needed for wallets, pools and explorers. To help the network,
+let other nodes reach you on **TCP 22111** (P2P). Never expose **22110** (RPC) to the internet.
 
 ## What differs from upstream
 
@@ -64,7 +87,7 @@ never from this code itself.
 ## Contributing and reporting
 
 Issues and reviews are welcome, especially independent rebuilds of releases and comparisons with a Go node. Security
-problems: please report them privately first (contact in the project repository).
+problems: please report them privately first, as described in [SECURITY.md](SECURITY.md).
 
 Working rules for changes: [AGENTS.md](AGENTS.md).
 

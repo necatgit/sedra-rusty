@@ -1,7 +1,7 @@
 # SEDRA: the pinned build environment for reproducible releases (see docs/RELEASE.md).
 # The base image is pinned by digest and Debian packages come from a fixed snapshot, so every builder gets the same
 # compilers and libraries. Changing either is a change of the release environment: note it in docs/RELEASE.md.
-FROM rust:1.99.1-slim-trixie@sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7
+FROM docker.io/library/rust:1.99.1-slim-trixie@sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7
 
 ARG SNAPSHOT=20261101T000000Z
 RUN printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s trixie main\n' "$SNAPSHOT" \

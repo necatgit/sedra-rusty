@@ -30,8 +30,22 @@ This only shows that the file arrived intact. That the binary really comes from 
 rebuilding it (next section) and comparing the checksums. Results of independent rebuilds are collected in the release
 issue; a match by someone other than the publisher is worth more than any signature.
 
-Release tags are not signed yet. Once a signing key is set up, its fingerprint is published here and in the project
-repository before the first signed tag.
+Release tags carry the prefix `sedra-` (for example `sedra-v0.1.0`). This repository contains the history of upstream
+rusty-kaspa, including its own tags `v0.1.0` and later, so a plain version tag would name a different commit.
+
+## Verify the tag signature
+
+Release tags are signed by Nec with an SSH key (Ed25519), fingerprint
+`SHA256:Eh/4CtYZPvHjYldtNexGX4RLCsz/Mi5MsBZDLKTRvUc`. The key is published at <https://puddlepool.com/keys.html> and
+listed as a signing key on the GitHub account `necatgit`:
+
+```
+curl -sO https://puddlepool.com/keys/allowed_signers
+git -c gpg.ssh.allowedSignersFile=allowed_signers verify-tag sedra-v0.1.0
+```
+
+A good signature shows who made the tag. Whether the binaries match the source is shown only by rebuilding them
+(next section).
 
 ## Rebuild a release yourself
 
@@ -65,8 +79,14 @@ from the published one.
 - 2026-11-09, commit `f024e02a`: `build.sh` run directly on one host (Ubuntu 24.04, WSL) from two clones in different
   directories, both checked out as a detached HEAD like a release tag: identical `SHA256SUMS` (archive `108a2966…`,
   binary `98cf0e4f…`). This shows that build paths, timestamps and the clone do not reach the output.
-- The container route (`build-in-docker.sh`) is set up but has not been run yet. Until two different machines have
-  produced the same checksums with it, a match across machines is the goal, not a tested property.
+- 2026-11-10, commit `527b4ca5` (branch `release-0.1.0`): the container route `build-in-docker.sh` with rootless
+  Podman 4.9.3 on the dev box (WSL), from a fresh clone at a detached HEAD: build 5 min, archive `94e80d7e…`, binary
+  `ec71ba49…`, `kaspad --version` = `0.1.0 (rusty-kaspa v1.0.1, commit 527b4ca537e7)`. Two fixes were needed for
+  Podman: a fully qualified base image name and `--userns=keep-id`.
+- 2026-11-14, tag `sedra-v0.1.0` (`d20f07be`): `build-in-docker.sh` on two different machines, Ubuntu 24.04 with
+  Podman 4.9.3 (WSL) and Ubuntu 26.04 with Podman 5.7.0 (a VM): identical `SHA256SUMS` (archive `04cd6669…`, binary
+  `3113bfe4…`). In 0.1.0 the script ended with exit code 1 after a complete build, because its last step,
+  `kaspad --version`, exits with 1 after printing (upstream behaviour); fixed in 0.1.1.
 
 ## If your checksum differs
 
@@ -78,6 +98,12 @@ claimed, or the published binary is not what the source produces. Both must be f
 
 1. Full test run on the release commit (`cargo test --release --no-fail-fast --workspace --exclude kaspa-wasm
    --exclude kaspa-wallet-pskt`), result recorded in the release notes.
-2. Set the release in `core/src/kaspad_env.rs` (`sedra_release`), commit, tag.
-3. `contrib/reproducible/build-in-docker.sh` on two different machines; both `SHA256SUMS` must match.
-4. Publish the archive, `SHA256SUMS` and the release notes; open the release issue for independent rebuilds.
+2. Cut the release branch `release-X.Y.Z` from `dev`; set the release in `core/src/kaspad_env.rs` (`sedra_release`)
+   there. Only release fixes and docs go on it. An urgent fix while `dev` holds unreleased work goes on a hotfix
+   branch `hotfix-X.Y.Z` cut from `main` instead, and follows the same steps.
+3. Merge it into `main` as a merge commit (`git merge --no-ff`) and sign the tag `sedra-vX.Y.Z` on that commit with the
+   release key. The key stays on its own machine: the tag text is built where the repository is, signed on the key's machine
+   with `ssh-keygen -Y sign -f <key> -n git`, and the signature is appended with `git mktag`; `verify-tag` must show a good
+   signature before the tag is pushed. Then merge the release branch back into `dev` and delete it.
+4. `contrib/reproducible/build-in-docker.sh` on two different machines; both `SHA256SUMS` must match.
+5. Publish the archive, `SHA256SUMS` and the release notes; open the release issue for independent rebuilds.

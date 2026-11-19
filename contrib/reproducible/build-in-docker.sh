@@ -9,7 +9,10 @@ ENGINE=${ENGINE:-$(command -v docker || command -v podman || true)}
 
 IMAGE=sedra-rusty-release:$(sha256sum contrib/reproducible/Dockerfile | cut -c1-12)
 "$ENGINE" build -t "$IMAGE" -f contrib/reproducible/Dockerfile contrib/reproducible
-"$ENGINE" run --rm \
+# Rootless Podman maps user IDs: keep-id makes the build user own the mounted checkout, as -u does with Docker.
+USERNS=()
+case "$(basename "$ENGINE")" in podman*) USERNS=(--userns=keep-id) ;; esac
+"$ENGINE" run --rm "${USERNS[@]}" \
     -v "$PWD:/sedra-rusty" \
     -u "$(id -u):$(id -g)" -e HOME=/tmp -e CARGO_HOME=/sedra-rusty/target/cargo-home \
     "$IMAGE" bash contrib/reproducible/build.sh

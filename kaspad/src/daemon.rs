@@ -219,11 +219,17 @@ pub fn create_core(args: Args, fd_total_budget: i32) -> (Arc<Core>, Arc<RpcCoreS
 /// The instance of the [`RpcCoreService`] needs to be released
 /// (dropped) before the `Core` is shut down.
 ///
+/// SEDRA (back-port, upstream 8ae55970): share of the file-descriptor budget for the UTXO index. The original
+/// `fd * 10 / 100` overflowed i32 for budgets above about 214M descriptors and panicked (overflow checks are on).
+fn utxo_index_fd_share(fd_budget: i32) -> i32 {
+    fd_budget / 10
+}
+
 pub fn create_core_with_runtime(runtime: &Runtime, args: &Args, fd_total_budget: i32) -> (Arc<Core>, Arc<RpcCoreService>) {
     let network = args.network();
     let mut fd_remaining = fd_total_budget;
     let utxo_files_limit = if args.utxoindex {
-        let utxo_files_limit = fd_remaining * 10 / 100;
+        let utxo_files_limit = utxo_index_fd_share(fd_remaining);
         fd_remaining -= utxo_files_limit;
         utxo_files_limit
     } else {
@@ -691,4 +697,15 @@ do you confirm? (answer y/n or pass --yes to the Kaspad command line to confirm 
     core.bind(async_runtime);
 
     (core, rpc_core_service)
+}
+
+#[cfg(test)]
+mod sedra_fd_tests {
+    use super::utxo_index_fd_share;
+
+    #[test]
+    fn sedra_utxo_index_fd_share_does_not_overflow() {
+        assert_eq!(utxo_index_fd_share(1000), 100);
+        assert_eq!(utxo_index_fd_share(i32::MAX), i32::MAX / 10);
+    }
 }

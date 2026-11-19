@@ -3,15 +3,17 @@
 This repository is a Sedra node built on [rusty-kaspa](https://github.com/kaspanet/rusty-kaspa) **v1.0.1**
 (`fcd9c28f`), the Rust node of Kaspa. Sedra's own node, `sedrad`, is a copy of Kaspa's Go node v0.12.15; this project
 moves Sedra to the Rust codebase. It is part of the
-[Sedra merged-mining project](https://github.com/necatgit/sedra-merged-mining); the reasoning is in its
+[Sedra project](https://github.com/necatgit/sedra-project) (public from late November 2026); the reasoning is in its
 `research/0004-rust-path.md`.
 
-**Status: work in progress. Not for mainnet use.**
+**Status: release 0.1.1 (2026-11-14), the same consensus rules as sedrad v2.0.0. Merged mining is not part of it.**
 
 ## Branches
 
-- `main`: unmodified upstream rusty-kaspa v1.0.1, as a reference point.
-- `dev`: Sedra changes. Every change is listed below.
+- `main`: releases only; each release is a merge commit with a signed tag `sedra-vX.Y.Z`.
+- `dev`: Sedra changes, integrated. Every change is listed below.
+- Feature branches off `dev`, for example `m10-auxpow` (merged mining, not in a release yet).
+- Unmodified upstream rusty-kaspa v1.0.1 is the tag `v1.0.1`.
 
 ## Goal of Step 1
 
@@ -77,7 +79,19 @@ Dependency updates from `cargo audit` (28 → 10 advisories, none of the remaini
 as run with UPnP disabled) were merged together with the hardening changes on 2026-11-06 (full test run: 517 passed,
 0 failed, 25 ignored).
 
-From the back-port list (#29), the must-fix and should items are merged; the optional items wait on branch `optional-backports` (tested) until the seven-day run (M9) has ended.
+From the back-port list (#29), the must-fix and should items were merged first. The optional back-ports below were
+merged after the seven-day run (M9), so that the run measured one version (tested on their branch: full suite 518
+passed, 0 failed):
+
+| Fix | Upstream commit | Regression test |
+|---|---|---|
+| Connection manager: no panic on a wakeup during shutdown | `1fe3697b` | none (needs a shutdown race harness) |
+| File-descriptor budget for the UTXO index without i32 overflow | `8ae55970` | `sedra_utxo_index_fd_share_does_not_overflow` |
+| Refuse the pruning point anticone request while the pruning point is genesis | `d2901794` | `sedra_pruning_point_anticone_rejected_at_genesis_test` |
+| `GetBlocks` without duplicate hashes | `6a94fac3` | none (needs an RPC test node) |
+| Do not announce a block back to the peer that sent it (adapted to protocol v5) | `07941fa1` | none (needs a P2P harness) |
+
+Both regression tests fail with the original code.
 
 **Not yet done:** the two hardcoded
 fallback peers from sedrad; renaming binaries, crates and user-facing texts (the binary is still called `kaspad`);
@@ -164,7 +178,7 @@ the node with `--utxoindex` and point the wallet's `--rpcserver` at it; the wall
 
 ## Releases
 
-`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.0` for step 1). `kaspad --version`
+`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (currently `0.1.1`). `kaspad --version`
 and the startup log show it with the upstream base and the commit, e.g. `0.1.0 (rusty-kaspa v1.0.1, commit
 9cb74efc1234)`. The P2P user agent stays the upstream `kaspad:1.0.1`, so the handshake with the Go nodes is unchanged.
 
