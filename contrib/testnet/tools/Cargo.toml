@@ -1,0 +1,18 @@
+# SEDRA (#13): tools for the public testnet (SIP-0003). Not part of the node's workspace; built with
+# contrib/testnet/build_tools.sh against this checkout's crates and Cargo.lock.
+[package]
+name = "sedra-testnet-tools"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "ISC"
+
+[workspace]
+
+[dependencies]
+kaspa-addresses = { path = "../../../crypto/addresses" }
+kaspa-consensus-core = { path = "../../../consensus/core" }
+kaspa-grpc-client = { path = "../../../rpc/grpc/client" }
+kaspa-rpc-core = { path = "../../../rpc/core" }
+kaspa-pow = { path = "../../../consensus/pow" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

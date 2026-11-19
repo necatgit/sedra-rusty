@@ -1,0 +1,28 @@
+# SEDRA (#13): a Sedra public-testnet node (seed node or participant node). Copy to /etc/systemd/system/, adjust
+# User, paths, the seed hosts and (seed nodes only) --externalip, then:
+#   systemctl daemon-reload && systemctl enable --now sedra-testnet-node
+# The testnet has its own network name (sedra-testnet-10), genesis, ports (P2P 22211, gRPC 22210) and addresses
+# (sedratest:), so it cannot connect to mainnet. Never point --addpeer/--connect at a mainnet node.
+[Unit]
+Description=Sedra public testnet node (sedra-rusty testnet release, merged mining per SIP-0001)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sedra
+ExecStart=/opt/sedra-testnet/kaspad --testnet --utxoindex --disable-upnp --nodnsseed \
+  --appdir=/var/lib/sedra-testnet --listen=0.0.0.0:22211 --rpclisten=127.0.0.1:22210 \
+  --addpeer=SEED1_HOST:22211 --addpeer=SEED2_HOST:22211 --yes
+# A seed node that faces the internet also announces itself with  --externalip=PUBLIC_IP:22211
+Restart=on-failure
+RestartSec=10
+MemoryMax=6G
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sedra-testnet
+
+[Install]
+WantedBy=multi-user.target

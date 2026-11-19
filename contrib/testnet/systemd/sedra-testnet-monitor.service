@@ -1,0 +1,23 @@
+# SEDRA (#13): the testnet monitor (contrib/testnet/tools). The first --node is the reference and must be an upgraded
+# node. gRPC listens on localhost only, so a node on another host is reached through an SSH tunnel
+# (ssh -N -L 22220:127.0.0.1:22210 seed2), never by opening its RPC port to the internet.
+# ALERT lines go to the journal: journalctl -u sedra-testnet-monitor | grep ALERT
+[Unit]
+Description=Sedra public testnet monitor (SIP-0003 pass criteria)
+After=network-online.target
+
+[Service]
+User=sedra
+ExecStart=/opt/sedra-testnet/sedra-testnet-monitor --out /var/lib/sedra-testnet-monitor \
+  --node seed1=grpc://127.0.0.1:22210 --node seed2=grpc://127.0.0.1:22220 --node old-go=grpc://127.0.0.1:22230 \
+  --interval 60 --depth 100
+Restart=on-failure
+RestartSec=30
+MemoryMax=512M
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/sedra-testnet-monitor
+
+[Install]
+WantedBy=multi-user.target

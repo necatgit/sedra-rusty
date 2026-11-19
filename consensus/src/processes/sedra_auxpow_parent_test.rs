@@ -49,7 +49,11 @@ fn unhex(v: &serde_json::Value) -> Vec<u8> {
 }
 
 fn headers() -> Vec<(Hash, Header)> {
-    json(HEADERS)["blocks"]
+    headers_from(HEADERS)
+}
+
+fn headers_from(gz: &[u8]) -> Vec<(Hash, Header)> {
+    json(gz)["blocks"]
         .as_array()
         .unwrap()
         .iter()
@@ -89,7 +93,11 @@ struct CoinbaseVector {
 }
 
 fn coinbases() -> Vec<CoinbaseVector> {
-    json(COINBASES)["blocks"]
+    coinbases_from(COINBASES)
+}
+
+fn coinbases_from(gz: &[u8]) -> Vec<CoinbaseVector> {
+    json(gz)["blocks"]
         .as_array()
         .unwrap()
         .iter()
@@ -660,4 +668,66 @@ fn sedra_auxpow_payload_commitment_fuzz_test() {
             assert_eq!(payload.windows(4).filter(|w| *w == b"SDM1").count(), 1);
         }
     }
+}
+
+// ---- #13: the public testnet's parent network is Kaspa testnet-10 (SIP-0003 §4.1) ----
+//
+// `testing/integration/testdata/kaspa_tn10_headers_v2.json.gz` and `kaspa_tn10_coinbases_v1.json.gz`: 20 consecutive
+// selected-chain Kaspa testnet-10 blocks from api-tn10.kaspa.org (kaspad 2.1.0, fetched 2026-11-19 UTC), with full
+// parents by level and the hashes the API reports. The same checks as for mainnet, then a whole proof on a real TN10
+// parent bound to the Sedra testnet genesis.
+
+const TN10_HEADERS: &[u8] = include_bytes!("../../../testing/integration/testdata/kaspa_tn10_headers_v2.json.gz");
+const TN10_COINBASES: &[u8] = include_bytes!("../../../testing/integration/testdata/kaspa_tn10_coinbases_v1.json.gz");
+
+#[test]
+fn sedra_kaspa_tn10_parent_hashing_test() {
+    let headers = headers_from(TN10_HEADERS);
+    assert_eq!(headers.len(), 20);
+    for (expected, header) in &headers {
+        assert_eq!(header.version, 2, "Kaspa TN10 headers are block version 2");
+        assert_eq!(header.hash, *expected, "Kaspa TN10 header hash differs (DAA score {})", header.daa_score);
+        let (_, passed) = kaspa_pow::calc_block_level_check_pow(header, crate::params::TESTNET_PARAMS.max_block_level);
+        assert!(passed, "kHeavyHash fails for Kaspa TN10 block {expected}");
+    }
+    let mut depths = Vec::new();
+    for v in coinbases_from(TN10_COINBASES) {
+        assert_eq!(v.coinbase.version, 1, "Kaspa TN10 coinbases are transaction version 1");
+        assert_eq!(v.coinbase.hash(), Some(v.coinbase_hash), "coinbase hash differs from Kaspa's (TN10 block {})", v.block_hash);
+        assert_eq!(v.tx_hashes[0], v.coinbase_hash, "the coinbase is leaf 0");
+        let header = &headers.iter().find(|(h, _)| *h == v.block_hash).expect("same blocks in both files").1;
+        assert_eq!(header.hash_merkle_root, v.hash_merkle_root);
+        let branch = leaf0_branch(&v.tx_hashes);
+        depths.push(branch.len());
+        assert_eq!(merkle_root_from_coinbase(v.coinbase.hash().unwrap(), &branch), header.hash_merkle_root, "TN10 block {}", v.block_hash);
+    }
+    assert!(depths.contains(&0) && depths.iter().any(|&d| d >= 5), "vectors cover an empty and a deep branch: {depths:?}");
+}
+
+#[test]
+fn sedra_auxpow_on_real_kaspa_tn10_parent_test() {
+    let genesis = crate::params::TESTNET_PARAMS.genesis.hash;
+    let v = coinbases_from(TN10_COINBASES).into_iter().find(|v| v.tx_hashes.len() >= 3).unwrap();
+    let mut parent = headers_from(TN10_HEADERS).into_iter().find(|(h, _)| *h == v.block_hash).unwrap().1;
+    let mut sedra =
+        Header::new_finalized(1, vec![vec![genesis]], ZERO_HASH, ZERO_HASH, ZERO_HASH, 1_795_000_000_000, AUX_BITS, 0, 400_000, 0.into(), 399_000, genesis);
+
+    let mut coinbase = v.coinbase.clone();
+    coinbase.payload.extend_from_slice(&AuxPow::tagged_commitment(AuxPow::commitment(genesis, AuxPow::nonce_free_header_hash(&sedra))));
+    let branch = leaf0_branch(&v.tx_hashes);
+    parent.hash_merkle_root = merkle_root_from_coinbase(coinbase.hash().unwrap(), &branch);
+    let target = Uint256::from_compact_target_bits(AUX_BITS);
+    let state = kaspa_pow::State::new(&parent);
+    parent.nonce = (0u64..).find(|&n| state.calculate_pow(n) <= target).unwrap();
+    parent.finalize();
+    sedra.nonce = AuxPow::nonce_binding(&parent);
+    sedra.finalize();
+    let aux = AuxPow { parent_header: parent, parent_coinbase: coinbase, coinbase_merkle_branch: branch };
+
+    assert_eq!(aux.verify_binding(genesis, &sedra), Ok(()));
+    assert_eq!(verify_aux_pow(&aux, genesis, &sedra), Ok(parent_pow(&aux)));
+    assert_eq!(check_pow_gated(&sedra, Some(&aux), AuxRule::new(true, genesis)), PowCheck::Aux(parent_pow(&aux)));
+    // bound to the testnet genesis: the same proof is no good on mainnet
+    assert_eq!(aux.verify_binding(MAINNET_PARAMS.genesis.hash, &sedra), Err(AuxPowError::WrongCommitment));
+    assert_ne!(genesis, MAINNET_PARAMS.genesis.hash);
 }

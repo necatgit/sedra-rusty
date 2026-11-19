@@ -91,9 +91,10 @@ pub struct Args {
     pub disable_grpc: bool,
     pub ram_scale: f64,
     pub retention_period_days: Option<f64>,
-    /// SEDRA (M10): DAA score from which merged mining is active, devnet only (local end-to-end tests with pool
-    /// software). Mainnet and testnet take the activation from the consensus parameters only.
-    pub devnet_aux_pow_activation: Option<u64>,
+    /// SEDRA (M10, #13): DAA score from which merged mining is active, overriding the consensus parameters. Devnet
+    /// and testnet only (local end-to-end tests, private testnet dry runs, a testnet reset). Mainnet and simnet refuse
+    /// it; public testnet participants run the score built into the release and never set this.
+    pub aux_pow_activation_override: Option<u64>,
 }
 
 impl Default for Args {
@@ -145,7 +146,7 @@ impl Default for Args {
             disable_grpc: false,
             ram_scale: 1.0,
             retention_period_days: None,
-            devnet_aux_pow_activation: None,
+            aux_pow_activation_override: None,
         }
     }
 }
@@ -167,9 +168,9 @@ impl Args {
         config.ram_scale = self.ram_scale;
         config.retention_period_days = self.retention_period_days;
 
-        // SEDRA (M10): parse() rejects the flag on every other network
-        if let Some(daa_score) = self.devnet_aux_pow_activation {
-            assert!(self.devnet, "--devnet-aux-pow-activation is allowed only on devnet");
+        // SEDRA (M10, #13): parse() rejects the flag on mainnet and simnet
+        if let Some(daa_score) = self.aux_pow_activation_override {
+            assert!(self.devnet || self.testnet, "--aux-pow-activation-override is allowed only on devnet and testnet");
             config.params.aux_pow_activation = kaspa_consensus_core::config::params::ForkActivation::new(daa_score);
         }
 
@@ -391,11 +392,12 @@ a large RAM (~64GB) can set this value to ~3.0-4.0 and gain superior performance
                 .help("The number of total days of data to keep.")
         )
         .arg(
-            Arg::new("devnet-aux-pow-activation")
-                .long("devnet-aux-pow-activation")
+            Arg::new("aux-pow-activation-override")
+                .long("aux-pow-activation-override")
+                .alias("devnet-aux-pow-activation")
                 .require_equals(true)
                 .value_parser(clap::value_parser!(u64))
-                .help("SEDRA: DAA score from which merged mining (SIP-0001) is active. Devnet only, for local tests.")
+                .help("SEDRA: DAA score from which merged mining (SIP-0001) is active, overriding the network's built-in value. Devnet and testnet only, for local tests and private dry runs; a node with another value than the rest of the network splits off.")
         )
         ;
 
@@ -477,7 +479,7 @@ impl Args {
             disable_grpc: arg_match_unwrap_or::<bool>(&m, "nogrpc", defaults.disable_grpc),
             ram_scale: arg_match_unwrap_or::<f64>(&m, "ram-scale", defaults.ram_scale),
             retention_period_days: m.get_one::<f64>("retention-period-days").cloned().or(defaults.retention_period_days),
-            devnet_aux_pow_activation: m.get_one::<u64>("devnet-aux-pow-activation").cloned().or(defaults.devnet_aux_pow_activation),
+            aux_pow_activation_override: m.get_one::<u64>("aux-pow-activation-override").cloned().or(defaults.aux_pow_activation_override),
 
             #[cfg(feature = "devnet-prealloc")]
             num_prealloc_utxos: m.get_one::<u64>("num-prealloc-utxos").cloned(),
@@ -487,11 +489,20 @@ impl Args {
             prealloc_amount: arg_match_unwrap_or::<u64>(&m, "prealloc-amount", defaults.prealloc_amount),
         };
 
-        if args.devnet_aux_pow_activation.is_some() && !args.devnet {
-            return Err(clap::Error::raw(
-                clap::error::ErrorKind::ArgumentConflict,
-                "--devnet-aux-pow-activation is allowed only together with --devnet\n",
-            ));
+        if let Some(daa_score) = args.aux_pow_activation_override {
+            if !(args.devnet || args.testnet) || args.simnet {
+                return Err(clap::Error::raw(
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "--aux-pow-activation-override is allowed only together with --devnet or --testnet\n",
+                ));
+            }
+            if args.testnet {
+                println!(
+                    "\nWARNING: --aux-pow-activation-override={daa_score} replaces this release's merged-mining activation on \
+                     testnet. A node with another activation than the rest of the network splits off. Use it only for a \
+                     private dry run.\n"
+                );
+            }
         }
 
         if arg_match_unwrap_or::<bool>(&m, "enable-mainnet-mining", false) {
@@ -602,28 +613,34 @@ fn arg_match_many_unwrap_or<T: Clone + Send + Sync + 'static>(m: &clap::ArgMatch
 #[cfg(test)]
 mod sedra_aux_pow_flag_tests {
     use super::*;
-    use kaspa_consensus_core::config::params::ForkActivation;
+    use kaspa_consensus_core::config::params::{ForkActivation, DEVNET_PARAMS, TESTNET_PARAMS};
+
+    fn applied(argv: &[&str], params: kaspa_consensus_core::config::params::Params) -> ForkActivation {
+        let args = Args::parse(argv.iter().copied()).unwrap();
+        let mut config = kaspa_consensus_core::config::Config::new(params);
+        args.apply_to_config(&mut config);
+        config.params.aux_pow_activation
+    }
 
     #[test]
-    fn devnet_aux_pow_activation_only_on_devnet() {
-        let args = Args::parse(["kaspad", "--devnet", "--devnet-aux-pow-activation=5"]).unwrap();
-        assert_eq!(args.devnet_aux_pow_activation, Some(5));
-        let mut config = kaspa_consensus_core::config::Config::new(kaspa_consensus_core::config::params::DEVNET_PARAMS);
-        args.apply_to_config(&mut config);
-        assert_eq!(config.params.aux_pow_activation, ForkActivation::new(5));
+    fn aux_pow_activation_override_only_on_devnet_and_testnet() {
+        assert_eq!(applied(&["kaspad", "--devnet", "--aux-pow-activation-override=5"], DEVNET_PARAMS), ForkActivation::new(5));
+        assert_eq!(applied(&["kaspad", "--testnet", "--aux-pow-activation-override=7"], TESTNET_PARAMS), ForkActivation::new(7));
+        // the old name of the flag still works (e2e harness, M10 step 5c)
+        assert_eq!(applied(&["kaspad", "--devnet", "--devnet-aux-pow-activation=5"], DEVNET_PARAMS), ForkActivation::new(5));
 
-        // mainnet, testnet and simnet refuse it
-        for net in [None, Some("--testnet"), Some("--simnet")] {
-            let mut argv = vec!["kaspad"];
-            argv.extend(net);
-            argv.push("--devnet-aux-pow-activation=5");
-            assert!(Args::parse(argv).is_err(), "{net:?}");
+        // mainnet and simnet refuse it, under either name
+        for flag in ["--aux-pow-activation-override=5", "--devnet-aux-pow-activation=5"] {
+            for net in [None, Some("--simnet")] {
+                let mut argv = vec!["kaspad"];
+                argv.extend(net);
+                argv.push(flag);
+                assert!(Args::parse(argv).is_err(), "{net:?} {flag}");
+            }
         }
 
         // without the flag nothing changes
-        let args = Args::parse(["kaspad", "--devnet"]).unwrap();
-        let mut config = kaspa_consensus_core::config::Config::new(kaspa_consensus_core::config::params::DEVNET_PARAMS);
-        args.apply_to_config(&mut config);
-        assert_eq!(config.params.aux_pow_activation, ForkActivation::never());
+        assert_eq!(applied(&["kaspad", "--devnet"], DEVNET_PARAMS), ForkActivation::never());
+        assert_eq!(applied(&["kaspad", "--testnet"], TESTNET_PARAMS), ForkActivation::never());
     }
 }

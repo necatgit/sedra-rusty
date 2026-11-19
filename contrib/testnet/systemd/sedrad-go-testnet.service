@@ -1,0 +1,23 @@
+# SEDRA (#13): the "old node" of SIP-0003 criterion 3: unmodified Go sedrad v2.0.0 on the testnet. It knows nothing
+# of merged mining: it should follow the chain until the first merged-mined block and stop following after it.
+# Its own ports, so it can share a host with a Rust testnet node (P2P 22231, RPC 22230).
+[Unit]
+Description=Sedra Go node v2.0.0 on the public testnet (old-node observer, SIP-0003 criterion 3)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sedra
+ExecStart=/opt/sedrad-v2.0.0/sedrad --testnet --appdir=/var/lib/sedrad-go-testnet --nodnsseed \
+  --listen=0.0.0.0:22231 --rpclisten=127.0.0.1:22230 --addpeer=SEED1_HOST:22211
+Restart=on-failure
+RestartSec=10
+MemoryMax=4G
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/sedrad-go-testnet
+
+[Install]
+WantedBy=multi-user.target
