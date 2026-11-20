@@ -1,0 +1,56 @@
+{
+  "_comment": "SEDRA (#13): Miningcore for the private dry run of the testnet kit. Parent: a private Kaspa testnet-10 chain (stand-in for the public Kaspa testnet-10), merged-mined chain: the Sedra testnet with genesisHash set. Node ports reach the test host through SSH tunnels (16210 Kaspa, 22210 Sedra, 8182 Sedra wallet). Postgres: the throwaway e2e cluster (contrib/e2e-merged-mining/pg_setup.sh). Stratum listens on the Windows host's WSL interface only.",
+  "logging": {
+    "level": "info",
+    "enableConsoleLog": true,
+    "enableConsoleColors": false,
+    "logFile": "",
+    "logBaseDirectory": "logs",
+    "perPoolLogFile": false
+  },
+  "banning": { "manager": "Integrated", "banOnJunkReceive": false, "banOnInvalidShares": false },
+  "persistence": {
+    "postgres": { "host": "127.0.0.1", "port": 5433, "user": "miningcore", "password": "e2e-local-only", "database": "miningcore" }
+  },
+  "paymentProcessing": { "enabled": false, "interval": 600, "shareRecoveryFile": "recovered-shares.txt" },
+  "api": { "enabled": true, "listenAddress": "127.0.0.1", "port": 4001 },
+  "clusterName": "dryrun",
+  "pools": [
+    {
+      "id": "e2e",
+      "enabled": true,
+      "coin": "kaspa",
+      "address": "kaspatest:qq3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zy09kj3t9w",
+      "blockRefreshInterval": 500,
+      "jobRebroadcastTimeout": 10,
+      "clientConnectionTimeout": 600,
+      "banning": { "enabled": false },
+      "ports": {
+        "5599": { "name": "dryrun fixed", "listenAddress": "<windows host ip on the WSL interface>", "difficulty": 1 }
+      },
+      "daemons": [ { "host": "127.0.0.1", "port": 16210, "http2": true } ],
+      "paymentProcessing": { "enabled": false, "payoutScheme": "PPLNS" },
+      "extra": {
+        "maxActiveJobs": 64,
+        "extraData": "dryrun",
+        "extraNonce1Size": 2,
+        "additionalMergedMining": [
+          {
+            "enabled": true,
+            "coin": "sedra",
+            "genesisHash": "f896a3034873be1739fc4359236899fd3d65d2bc94f9780df0d0da3eb1cc4370",
+            "host": "127.0.0.1",
+            "port": 22210,
+            "address": "sedratest:<pool address from the dry-run wallet>",
+            "extraData": "dryrun-pool",
+            "walletHost": "127.0.0.1",
+            "walletPort": 8182,
+            "protobufWalletRpcServiceName": "sedrawalletd.sedrawalletd",
+            "minimumConfirmations": 10,
+            "payoutScheme": "PPLNS"
+          }
+        ]
+      }
+    }
+  ]
+}

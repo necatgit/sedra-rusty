@@ -15,4 +15,5 @@ kaspa-consensus-core = { path = "../../../consensus/core" }
 kaspa-grpc-client = { path = "../../../rpc/grpc/client" }
 kaspa-rpc-core = { path = "../../../rpc/core" }
 kaspa-pow = { path = "../../../consensus/pow" }
+serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

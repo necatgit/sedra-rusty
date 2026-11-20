@@ -10,10 +10,13 @@
 //!   other node has it and has it on its selected chain (criteria 1 and 8; an old node after activation shows
 //!   `present=0`).
 //!
-//! The first `--node` is the reference and must be an upgraded (merged-mining) node. Lines starting with `ALERT` go to
+//! The first `--node` is the reference and must be an upgraded (merged-mining) node reached over gRPC. The Go node
+//! sedrad v2.0.0 does not answer this gRPC client (requests time out, found in the dry run 2026-11-20), so an old Go
+//! node is given as `sedractl://HOST:PORT` and asked through Go's own `sedractl` (binary from `$SEDRACTL`, default
+//! `sedractl` on PATH; network flag from `$SEDRACTL_NET`, default `--testnet`). Lines starting with `ALERT` go to
 //! stdout for the operator.
 //!
-//! Usage: sedra-testnet-monitor --out DIR --node seed1=grpc://127.0.0.1:22210 [--node old-go=grpc://...]...
+//! Usage: sedra-testnet-monitor --out DIR --node seed1=grpc://127.0.0.1:22210 [--node old-go=sedractl://127.0.0.1:22230]...
 //!        [--interval 60] [--depth 100] [--from CHAIN_BLOCK_HASH] [--once]
 
 use kaspa_consensus_core::header::Header;
@@ -34,7 +37,38 @@ struct Node {
     client: Option<GrpcClient>,
 }
 
+/// Go `sedractl` answer as JSON, or the error it reports.
+fn sedractl(server: &str, args: &[&str]) -> Result<serde_json::Value, String> {
+    let bin = std::env::var("SEDRACTL").unwrap_or_else(|_| "sedractl".into());
+    let net = std::env::var("SEDRACTL_NET").unwrap_or_else(|_| "--testnet".into());
+    let out = std::process::Command::new(&bin)
+        .arg(&net)
+        .arg("-s")
+        .arg(server)
+        .args(args)
+        .output()
+        .map_err(|e| format!("{bin}: {e}"))?;
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| format!("sedractl output: {e}"))?;
+    let resp = v.as_object().and_then(|o| o.values().next()).cloned().ok_or("empty sedractl answer")?;
+    match resp.get("error") {
+        Some(e) if !e.is_null() => Err(e.get("message").and_then(|m| m.as_str()).unwrap_or("error").to_string()),
+        _ => Ok(resp),
+    }
+}
+
+fn js(v: &serde_json::Value, k: &str) -> String {
+    match v.get(k) {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    }
+}
+
 impl Node {
+    fn ctl(&self) -> Option<&str> {
+        self.url.strip_prefix("sedractl://")
+    }
+
     async fn client(&mut self) -> Result<&GrpcClient, String> {
         if self.client.is_none() {
             let c = tokio::time::timeout(Duration::from_secs(10), GrpcClient::connect(self.url.clone()))
@@ -152,10 +186,48 @@ impl State {
     }
 }
 
+const NODES_HEADER: &str =
+    "unix_time,node,status,network,virtual_daa_score,sink,pruning_point,block_count,is_synced,peers,server_version,error";
+
 async fn poll_nodes(o: &mut Opts) -> Vec<Option<(u64, RpcHash)>> {
     let mut result = Vec::new();
     for node in o.nodes.iter_mut() {
         let t = now();
+        if let Some(server) = node.ctl().map(str::to_string) {
+            let r = (|| -> Result<(String, u64, String), String> {
+                let dag = sedractl(&server, &["GetBlockDagInfo"])?;
+                let info = sedractl(&server, &["GetInfo"])?;
+                let peers = sedractl(&server, &["GetConnectedPeerInfo"])
+                    .map(|p| p.get("infos").and_then(|i| i.as_array()).map_or(0, |a| a.len()).to_string())
+                    .unwrap_or_default();
+                let daa: u64 = js(&dag, "virtualDaaScore").parse().unwrap_or(0);
+                let sink = dag.get("virtualParentHashes").and_then(|v| v.get(0)).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let synced = info.get("isSynced").and_then(|v| v.as_bool()).unwrap_or(false);
+                let line = format!(
+                    "{t},{},ok,{},{daa},{sink},{},{},{},{peers},{},",
+                    node.name,
+                    js(&dag, "networkName"),
+                    js(&dag, "pruningPointHash"),
+                    js(&dag, "blockCount"),
+                    synced as u8,
+                    clean(&js(&info, "serverVersion"))
+                );
+                Ok((line, daa, sink))
+            })();
+            let line = match r {
+                Ok((line, daa, sink)) => {
+                    result.push(Some((daa, RpcHash::from_str(&sink).unwrap_or_default())));
+                    line
+                }
+                Err(e) => {
+                    result.push(None);
+                    println!("ALERT {t} node {} unreachable: {}", node.name, clean(&e));
+                    format!("{t},{},error,,,,,,,,,{}", node.name, clean(&e))
+                }
+            };
+            append(&o.out, "nodes.csv", NODES_HEADER, &line);
+            continue;
+        }
         let r: Result<(String, u64), String> = async {
             let c = node.client().await?;
             let dag = c.get_block_dag_info().await.map_err(|e| e.to_string())?;
@@ -189,12 +261,7 @@ async fn poll_nodes(o: &mut Opts) -> Vec<Option<(u64, RpcHash)>> {
                 format!("{t},{},error,,,,,,,,,{}", node.name, clean(&e))
             }
         };
-        append(
-            &o.out,
-            "nodes.csv",
-            "unix_time,node,status,network,virtual_daa_score,sink,pruning_point,block_count,is_synced,peers,server_version,error",
-            &line,
-        );
+        append(&o.out, "nodes.csv", NODES_HEADER, &line);
     }
     result
 }
@@ -255,6 +322,25 @@ async fn check_agreement(o: &mut Opts, recent: &VecDeque<(u64, RpcHash)>, ref_da
     let out = o.out.clone();
     let t = now();
     for node in o.nodes.iter_mut().skip(1) {
+        if let Some(server) = node.ctl().map(str::to_string) {
+            let line = match sedractl(&server, &["GetBlock", &hash.to_string(), "false"]) {
+                Ok(b) => {
+                    let on_chain =
+                        b.pointer("/block/verboseData/isChainBlock").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !on_chain {
+                        println!("ALERT {t} node {} has {hash} (DAA {daa}) but not on its selected chain", node.name);
+                    }
+                    format!("{t},{hash},{daa},{},1,{}", node.name, on_chain as u8)
+                }
+                Err(e) if e.contains("not found") => {
+                    println!("ALERT {t} node {} does not have reference chain block {hash} (DAA {daa})", node.name);
+                    format!("{t},{hash},{daa},{},0,0", node.name)
+                }
+                Err(_) => continue,
+            };
+            append(&out, "agreement.csv", "unix_time,hash,daa_score,node,present,is_chain_block", &line);
+            continue;
+        }
         let line = match node.client().await {
             Ok(c) => match c.get_block(hash, false).await {
                 Ok(b) => {

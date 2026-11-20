@@ -176,6 +176,44 @@ Wallets: the Go wallet daemon `sedrawallet` from sedrad v2.0.0 works against thi
 local devnet: balance, CLI send, and the daemon's `Send` as pool software pays out; amounts and fees exact). Start
 the node with `--utxoindex` and point the wallet's `--rpcserver` at it; the wallet itself stays unchanged.
 
+## Public testnet kit (#13, SIP-0003; branch `testnet-kit`, from `m10-auxpow` with `dev` merged in)
+
+Not launched: the launch waits for the Sedra team's agreement (SIP-0003 Q51, Q52). Guide, runbook and report template
+are in the project repository under `testnet/`.
+
+- **Activation switch.** `--devnet-aux-pow-activation` is now `--aux-pow-activation-override=<DAA score>` (old name
+  kept as an alias), allowed on devnet and testnet, refused on mainnet and simnet, with a warning on testnet. The
+  public testnet release will carry its score in `TESTNET_PARAMS.aux_pow_activation`; the override is for private
+  dry runs. Test: `kaspad` `sedra_aux_pow_flag_tests`.
+- **Kaspa testnet-10 parents.** The testnet's parent network is Kaspa testnet-10 (SIP-0003 §4.1).
+  `testing/integration/testdata/kaspa_tn10_*_v*.json.gz`: 20 consecutive chain blocks from api-tn10.kaspa.org
+  (kaspad 2.1.0, header version 2, coinbase version 1, fetched 2026-11-19 UTC). `sedra_kaspa_tn10_parent_hashing_test`:
+  20/20 header hashes and kHeavyHash, 20/20 coinbase hashes, Merkle branches of depth 0 to 6 reach the root.
+  `sedra_auxpow_on_real_kaspa_tn10_parent_test`: a whole proof on a real TN10 parent binds to the Sedra testnet
+  genesis and fails against the mainnet genesis.
+- **Tools and configs** in `contrib/testnet/` (see its README): a native CPU miner (`--sdm1` for the self-parent-ban
+  test), a monitor that classifies every block as native or merged-mined and checks that all nodes have the same
+  chain (Go nodes through `sedractl`, because this node's gRPC client gets no answer from Go sedrad v2.0.0), a
+  summary script, a faucet script, systemd units, the testnet Miningcore config and dry-run scripts.
+
+Full test suite (2026-11-20, tree of commit `3c06131b`): 112 suites, 561 passed, 0 failed, 25 ignored.
+
+**Dry run 2026-11-20** (sedra-dev, loopback only, `--aux-pow-activation-override=4000`): two Sedra testnet nodes, an
+unmodified Go sedrad v2.0.0 `--testnet`, a private Kaspa testnet-10 chain (upstream kaspad 2.1.0) as the parent,
+Miningcore through SSH tunnels and a stratum CPU miner. The first merged-mined block came at DAA 4000 exactly; the
+pool's candidates were rejected before it and accepted from it on (176 merged-mined and 232 native blocks after
+activation in the monitor by 00:12 UTC; 131 Sedra blocks credited to the miner's `a=` address in the pool's database
+at 00:11 UTC). The second node never missed a reference chain block. The Go node
+followed until DAA 4000, then rejected the first merged-mined block (`ErrInvalidPoW`) and disconnected from the Rust
+peer. A block whose own coinbase carries an `SDM1` commitment was rejected, the same block without it accepted. A
+fresh node started after activation synced from scratch (4,217 headers and blocks, merged-mined ones included) and
+reached the same sink. Go sedrawallet sent and received; `faucet.sh` worked.
+Found and fixed in the kit: Miningcore must get the testnet `genesisHash` (its default is mainnet's); Miningcore
+refuses a `sedratest:` address when the parent is a Kaspa devnet, so the dry-run parent is a Kaspa testnet; a node
+started with `--connect` accepts no inbound peers. Not covered: pool payouts, a pruning proof with merged-mined
+headers (the chain was shorter than the pruning depth), the ban start before activation (with a score of 4000 the
+ban runs from genesis). Evidence in the project repository, `research/archive/2026-11-20-0013-testnet-dryrun.md`.
+
 ## Releases
 
 `sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (currently `0.1.1`). `kaspad --version`

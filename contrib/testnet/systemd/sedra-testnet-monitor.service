@@ -8,8 +8,9 @@ After=network-online.target
 
 [Service]
 User=sedra
+Environment=SEDRACTL=/opt/sedrad-v2.0.0/sedractl
 ExecStart=/opt/sedra-testnet/sedra-testnet-monitor --out /var/lib/sedra-testnet-monitor \
-  --node seed1=grpc://127.0.0.1:22210 --node seed2=grpc://127.0.0.1:22220 --node old-go=grpc://127.0.0.1:22230 \
+  --node seed1=grpc://127.0.0.1:22210 --node seed2=grpc://127.0.0.1:22220 --node old-go=sedractl://127.0.0.1:22230 \
   --interval 60 --depth 100
 Restart=on-failure
 RestartSec=30
