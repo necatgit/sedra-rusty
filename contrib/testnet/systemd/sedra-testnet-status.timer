@@ -1,0 +1,11 @@
+# SEDRA (#13): runs sedra-testnet-status.service every minute.
+[Unit]
+Description=Rebuild the Sedra testnet status page every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

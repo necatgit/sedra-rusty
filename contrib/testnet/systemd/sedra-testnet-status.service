@@ -1,0 +1,19 @@
+# SEDRA (#13): rebuilds the public status page (contrib/testnet/status_page.py) from the monitor's CSV files.
+# Called every minute by sedra-testnet-status.timer. The web server (any static server) serves /var/www/sedra-testnet;
+# it needs no access to a node. Fill in the seed addresses and the pool at launch.
+[Unit]
+Description=Sedra public testnet status page
+After=sedra-testnet-monitor.service
+
+[Service]
+Type=oneshot
+User=sedra
+ExecStart=/usr/bin/python3 /opt/sedra-testnet/status_page.py /var/lib/sedra-testnet-monitor --out /var/www/sedra-testnet \
+  --activation 345600 --old old-go --seed <seed1>:22211 --seed <seed2>:22211 --pool stratum+tcp://<pool-host>:15555 \
+  --report-url https://github.com/necatgit/sedra-project/issues/13
+Nice=10
+MemoryMax=256M
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/sedra-testnet
