@@ -15,5 +15,6 @@ pass-report template, design) are in the project repository, `necatgit/sedra-pro
 | `pool/miningcore-testnet.json` | Miningcore (branch `sedra-merged-mining`): Kaspa testnet-10 parent, Sedra testnet aux chain. `genesisHash` must be the testnet genesis |
 | `dryrun/` | a private dry run of the whole kit on one host (loopback, own ports and data dir, activation override) |
 
-The testnet release carries its activation score in `TESTNET_PARAMS`. `--aux-pow-activation-override=<DAA>` replaces
+The testnet release carries its activation score in `TESTNET_PARAMS` (0.2.0-testnet.1: 345,600; ban start
+172,800). `--aux-pow-activation-override=<DAA>` replaces
 it for dry runs only (allowed on devnet and testnet, refused on mainnet and simnet).

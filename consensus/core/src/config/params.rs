@@ -652,12 +652,19 @@ pub const TESTNET_PARAMS: Params = Params {
     crescendo: CRESCENDO,
     // 18:30 UTC, March 6, 2025
     crescendo_activation: ForkActivation::never(), // Sedra runs the pre-Crescendo (kaspad Go v0.12.15) rules
-    aux_pow_activation: ForkActivation::never(), // SEDRA (M10): merged mining not scheduled
+    // SEDRA (#13, SIP-0003 public testnet, release 0.2.0-testnet.1): merged mining activates at DAA score 345,600 of
+    // a fresh `sedra-testnet-10` chain mined from genesis (DAA score 0): 4 x 86,400, about four days at one block per
+    // second. The self-parent ban starts 2 x finality depth earlier, at 172,800 (about day 2). Method and dates in
+    // sedra-project testnet/RUNBOOK.md 3.1; values tested in sedra_auxpow_testnet_release_activation_test.
+    aux_pow_activation: ForkActivation::new(TESTNET_AUX_POW_ACTIVATION_DAA_SCORE),
     difficulty_reset_activation_daa_score: 0,
     difficulty_reset_window_blocks: 0,
     treasury_allocation_windows: &[],
     treasury_script_public_key: &[],
 };
+
+/// SEDRA (#13): merged-mining activation of the public testnet release (see `TESTNET_PARAMS`).
+pub const TESTNET_AUX_POW_ACTIVATION_DAA_SCORE: u64 = 345_600;
 
 pub const SIMNET_PARAMS: Params = Params {
     dns_seeders: &[],

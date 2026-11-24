@@ -505,6 +505,18 @@ impl Args {
             }
         }
 
+        // SEDRA (#13): a testnet release must never run as a mainnet node by accident (mainnet is the default network)
+        if kaspa_core::kaspad_env::is_testnet_release() && !(args.testnet || args.devnet || args.simnet) {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::ArgumentConflict,
+                format!(
+                    "this is the testnet release {} of sedra-rusty: it runs only with --testnet (or --devnet, --simnet). \
+                     For Sedra mainnet use a mainnet release (tag sedra-vX.Y.Z without \"-testnet\").\n",
+                    kaspa_core::kaspad_env::sedra_release()
+                ),
+            ));
+        }
+
         if arg_match_unwrap_or::<bool>(&m, "enable-mainnet-mining", false) {
             println!("\nNOTE: The flag --enable-mainnet-mining is deprecated and defaults to true also w/o explicit setting\n")
         }
@@ -639,8 +651,19 @@ mod sedra_aux_pow_flag_tests {
             }
         }
 
-        // without the flag nothing changes
+        // without the flag the release's own activation applies
         assert_eq!(applied(&["kaspad", "--devnet"], DEVNET_PARAMS), ForkActivation::never());
-        assert_eq!(applied(&["kaspad", "--testnet"], TESTNET_PARAMS), ForkActivation::never());
+        assert_eq!(applied(&["kaspad", "--testnet"], TESTNET_PARAMS), TESTNET_PARAMS.aux_pow_activation);
+    }
+
+    #[test]
+    fn testnet_release_refuses_mainnet() {
+        let testnet_release = kaspa_core::kaspad_env::is_testnet_release();
+        // mainnet is the default network: a testnet release refuses it, a mainnet release accepts it
+        assert_eq!(Args::parse(["kaspad"]).is_err(), testnet_release);
+        assert_eq!(Args::parse(["kaspad", "--utxoindex"]).is_err(), testnet_release);
+        for net in ["--testnet", "--devnet", "--simnet"] {
+            assert!(Args::parse(["kaspad", net]).is_ok(), "{net}");
+        }
     }
 }

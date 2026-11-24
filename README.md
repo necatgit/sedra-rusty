@@ -12,6 +12,12 @@ mining with Kaspa, is a separate hard fork that needs agreement first; nothing o
 
 ## Status
 
+> **Testnet release 0.2.0-testnet.1** (branch `release-0.2.0-testnet.1`, tag `sedra-v0.2.0-testnet.1` once signed):
+> for the public merged-mining testnet `sedra-testnet-10` only. It refuses to start without `--testnet` (or
+> `--devnet`/`--simnet`), so it cannot run as a mainnet node. Merged mining activates on the testnet at DAA score
+> 345,600, the self-parent ban starts at 172,800. Participant guide: `testnet/GUIDE.md` in
+> [sedra-project](https://github.com/necatgit/sedra-project). For Sedra mainnet use 0.1.1 below.
+
 **Released: [0.1.1](https://github.com/necatgit/sedra-rusty/releases/latest)**, the same consensus rules as Sedra
 mainnet today (sedrad v2.0.0). Merged mining is not part of it.
 

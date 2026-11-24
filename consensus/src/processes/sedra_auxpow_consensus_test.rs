@@ -136,8 +136,78 @@ fn sedra_auxpow_ban_window_test() {
     assert_eq!(p.coinbase_commitment_ban_activation(), ForkActivation::new(8 * finality));
     p.aux_pow_activation = ForkActivation::new(finality);
     assert_eq!(p.coinbase_commitment_ban_activation(), ForkActivation::always(), "saturates at always");
-    for params in [crate::params::MAINNET_PARAMS, crate::params::TESTNET_PARAMS, SIMNET_PARAMS, crate::params::DEVNET_PARAMS] {
-        assert_eq!(params.aux_pow_activation, ForkActivation::never(), "not scheduled on any network yet");
+    for params in [crate::params::MAINNET_PARAMS, SIMNET_PARAMS, crate::params::DEVNET_PARAMS] {
+        assert_eq!(params.aux_pow_activation, ForkActivation::never(), "not scheduled outside the testnet");
+    }
+}
+
+/// SEDRA (#13): the activation written into the testnet release (SIP-0003; sedra-project testnet/RUNBOOK.md 3.1).
+#[test]
+fn sedra_auxpow_testnet_release_activation_test() {
+    let p = crate::params::TESTNET_PARAMS;
+    assert_eq!(p.finality_depth().upper_bound(), 86_400);
+    assert_eq!(p.genesis.daa_score, 0, "a fresh chain from genesis starts at DAA score 0");
+    assert_eq!(p.aux_pow_activation, ForkActivation::new(345_600), "4 x 86,400: about day 4 at one block per second");
+    assert_eq!(p.coinbase_commitment_ban_activation(), ForkActivation::new(172_800), "2 x finality depth earlier: about day 2");
+    assert!(!p.aux_pow_activation.is_active(345_599) && p.aux_pow_activation.is_active(345_600));
+    let ban = p.coinbase_commitment_ban_activation();
+    assert!(!ban.is_active(172_799) && ban.is_active(172_800));
+    // mainnet keeps the rules of the mainnet releases
+    assert_eq!(crate::params::MAINNET_PARAMS.coinbase_commitment_ban_activation(), ForkActivation::never());
+}
+
+/// SEDRA (#13): the activation boundary through the real pipeline, at the exact DAA score of the block (activation one
+/// above it: the proof is ignored; activation at it: accepted). The release's own scores are checked above; a chain
+/// cannot be brought to DAA 345,600 in a unit test, so the same rule is shown at the score of a block on genesis (the
+/// test builder gives it DAA score 0, so "one above" is activation 1 and "at it" is activation 0).
+#[tokio::test]
+async fn sedra_auxpow_activation_boundary_test() {
+    for (offset, accepted) in [(1u64, false), (0, true)] {
+        let (probe, probe_genesis) = consensus(ForkActivation::never());
+        let probe_wait = probe.init();
+        let daa = aux_mined_block(&probe, probe_genesis, 0).0.header.daa_score;
+        probe.shutdown(probe_wait);
+        assert_eq!(daa, 0, "the score the comment above relies on");
+        let (tc, genesis) = consensus(ForkActivation::new(daa + offset));
+        let wait = tc.init();
+        let (mut block, aux) = aux_mined_block(&tc, genesis, 0);
+        assert_eq!(block.header.daa_score, daa);
+        block.header.aux_pow = Some(Box::new(aux));
+        let result = tc.validate_and_insert_block(block.to_immutable()).block_task.await;
+        if accepted {
+            result.unwrap();
+        } else {
+            assert_match!(result, Err(RuleError::InvalidPoW));
+        }
+        tc.shutdown(wait);
+    }
+}
+
+/// SEDRA (#13): the self-parent ban boundary: an `SDM1` commitment in a Sedra coinbase is accepted when the ban starts
+/// one DAA score above the block, and rejected when it starts at the block's score.
+#[tokio::test]
+async fn sedra_auxpow_ban_boundary_test() {
+    let two_finality = 2 * SIMNET_PARAMS.finality_depth().upper_bound();
+    for (offset, accepted) in [(1u64, true), (0, false)] {
+        let (probe, probe_genesis) = consensus(ForkActivation::never());
+        let probe_wait = probe.init();
+        let daa = native_block_with_commitment(&probe, probe_genesis).header.daa_score;
+        probe.shutdown(probe_wait);
+        let activation = ForkActivation::new(daa + offset + two_finality);
+        let mut p = SIMNET_PARAMS;
+        p.aux_pow_activation = activation;
+        assert_eq!(p.coinbase_commitment_ban_activation(), ForkActivation::new(daa + offset));
+        let (tc, genesis) = consensus(activation);
+        let wait = tc.init();
+        let block = native_block_with_commitment(&tc, genesis);
+        assert_eq!(block.header.daa_score, daa);
+        let result = tc.validate_and_insert_block(block.to_immutable()).block_task.await;
+        if accepted {
+            result.unwrap();
+        } else {
+            assert_match!(result, Err(RuleError::CoinbaseCarriesMergeMiningCommitment));
+        }
+        tc.shutdown(wait);
     }
 }
 

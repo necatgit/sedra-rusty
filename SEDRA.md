@@ -7,6 +7,8 @@ moves Sedra to the Rust codebase. It is part of the
 `research/0004-rust-path.md`.
 
 **Status: release 0.1.1 (2026-11-14), the same consensus rules as sedrad v2.0.0. Merged mining is not part of it.**
+Testnet release 0.2.0-testnet.1 (branch `release-0.2.0-testnet.1`, for the public testnet only; see "Public testnet
+kit" below).
 
 ## Branches
 
@@ -198,6 +200,21 @@ are in the project repository under `testnet/`.
 
 Full test suite (2026-11-20, tree of commit `3c06131b`): 112 suites, 561 passed, 0 failed, 25 ignored.
 
+**Testnet release 0.2.0-testnet.1** (branch `release-0.2.0-testnet.1`, from `testnet-kit` with `main` merged in, so
+both signed mainnet releases are ancestors; tag `sedra-v0.2.0-testnet.1`, never merged into `main`):
+
+- `TESTNET_PARAMS.aux_pow_activation = 345,600` (`TESTNET_AUX_POW_ACTIVATION_DAA_SCORE`): a fresh `sedra-testnet-10`
+  chain from genesis (DAA score 0), activation after 4 x 86,400 DAA (about four days at one block per second), so the
+  self-parent ban starts at 172,800 (about day 2). The scores count from genesis, so they hold whenever the chain is
+  started. Method: project repository `testnet/RUNBOOK.md` 3.1. Mainnet, devnet and simnet stay `never`.
+- `sedra_release()` = `0.2.0-testnet.1`; `kaspad --version` prints it. A testnet release refuses to start on mainnet
+  (the default network): `kaspad` without `--testnet`, `--devnet` or `--simnet` exits with an error
+  (`is_testnet_release()` in `core/src/kaspad_env.rs`, check in `kaspad/src/args.rs`).
+- Tests: `sedra_auxpow_testnet_release_activation_test` (the release's scores and both boundaries, score - 1 and
+  score), `sedra_auxpow_activation_boundary_test` and `sedra_auxpow_ban_boundary_test` (the same boundaries through
+  the real pipeline: a merged-mined block one DAA below the activation fails, at it passes; an `SDM1` coinbase one
+  below the ban start passes, at it fails), `testnet_release_refuses_mainnet`, `testnet_releases_are_recognised`.
+
 **Dry run 2026-11-20** (sedra-dev, loopback only, `--aux-pow-activation-override=4000`): two Sedra testnet nodes, an
 unmodified Go sedrad v2.0.0 `--testnet`, a private Kaspa testnet-10 chain (upstream kaspad 2.1.0) as the parent,
 Miningcore through SSH tunnels and a stratum CPU miner. The first merged-mined block came at DAA 4000 exactly; the
@@ -216,7 +233,8 @@ ban runs from genesis). Evidence in the project repository, `research/archive/20
 
 ## Releases
 
-`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (currently `0.1.1`). `kaspad --version`
+`sedra_release()` in `core/src/kaspad_env.rs` holds the release of this node (`0.1.1` on `main`
+and `dev`; `0.2.0-testnet.1` on the testnet release branch). `kaspad --version`
 and the startup log show it with the upstream base and the commit, e.g. `0.1.0 (rusty-kaspa v1.0.1, commit
 9cb74efc1234)`. The P2P user agent stays the upstream `kaspad:1.0.1`, so the handshake with the Go nodes is unchanged.
 

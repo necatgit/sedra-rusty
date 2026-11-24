@@ -88,6 +88,18 @@ from the published one.
   `3113bfe4…`). In 0.1.0 the script ended with exit code 1 after a complete build, because its last step,
   `kaspad --version`, exits with 1 after printing (upstream behaviour); fixed in 0.1.1.
 
+## Testnet releases
+
+A testnet release (for example `0.2.0-testnet.1`) is for the public test network `sedra-testnet-10` only:
+
+- it is cut as `release-X.Y.Z-testnet.N` from the testnet branch, never merged into `main`, and its tag is
+  `sedra-vX.Y.Z-testnet.N`;
+- it is published on GitHub as a **pre-release**, so "latest release" keeps pointing at the mainnet release;
+- the binary refuses to start without `--testnet` (or `--devnet`, `--simnet`), so it cannot run as a mainnet node by
+  accident;
+- it is built, verified and signed exactly like a mainnet release (this file); the archive is
+  `sedra-rusty-X.Y.Z-testnet.N-linux-amd64.tar.gz`.
+
 ## If your checksum differs
 
 Open an issue with your `dist/SHA256SUMS`, `dist/sedra-rusty-*/BUILDINFO`, the output of `docker version` (or
