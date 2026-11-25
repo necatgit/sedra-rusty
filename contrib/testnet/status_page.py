@@ -574,6 +574,27 @@ def svg_line(series):
             f'<text x="{w}" y="-8" text-anchor="end">max {si(top, "H/s")}</text></svg>')
 
 
+def coin_tree(v, zkas):
+    """The hero's coin group: Kaspa on top, arrows down to Sedra (and ZKas when the monitor follows it). You mine Kaspa;
+    the merged-mined coins come on top of it. One inline SVG, so it scales as a unit and the arrows take the theme's
+    colour (currentColor)."""
+    label = "Mine KAS, get SDR and/or ZKAS on top" if zkas else "Mine KAS, get SDR on top"
+    if zkas:
+        lows = (f'<image href="{ASSETS}/sedra.svg{v}" x="0" y="64" width="44" height="44"/>'
+                f'<image href="{ASSETS}/zkas.svg{v}" x="88" y="64" width="44" height="44"/>'
+                '<path d="M54 44 L30 64"/><path d="M78 44 L102 64"/>')
+        caption = "mine KAS · get SDR and/or ZKAS"
+    else:
+        lows = f'<image href="{ASSETS}/sedra.svg{v}" x="44" y="64" width="44" height="44"/><path d="M66 46 L66 62"/>'
+        caption = "mine KAS · get SDR on top"
+    return (f'<figure class="hero-coins" title="{label}"><svg viewBox="0 0 132 108" role="img" aria-label="{label}">'
+            '<defs><marker id="tip" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto">'
+            '<path d="M0 0 L6 3 L0 6 z" fill="currentColor" stroke="none"/></marker></defs>'
+            f'<image href="{ASSETS}/kaspa.svg{v}" x="44" y="0" width="44" height="44"/>'
+            f'<g class="branch" marker-end="url(#tip)">{lows}</g></svg>'
+            f'<figcaption>{caption}</figcaption></figure>')
+
+
 def render(s, a, phase_key, hash_series, ver):
     e = html.escape
     links = {k: getattr(a, k) or v for k, v in DEFAULTS.items()}
@@ -642,7 +663,7 @@ def render(s, a, phase_key, hash_series, ver):
     v = f"?v={ver}"
     z = s["zkas"]
     sp = s["shared_parents"]
-    zkas_coin = f'<span>+</span><img src="{ASSETS}/zkas.svg{v}" alt="ZKas">' if z else ""
+    coins = coin_tree(v, bool(z))
     zkas_html = ""
     if z:
         zall, z24 = z["blocks_all_time"], z["blocks_last_24h"]
@@ -689,7 +710,7 @@ is the first 8 bytes of its parent's hash.</p>
 </div></header>
 <main>
 <section class="hero">
-<div class="hero-coins"><img src="{ASSETS}/sedra.svg{v}" alt="Sedra"><span>+</span><img src="{ASSETS}/kaspa.svg{v}" alt="Kaspa">{zkas_coin}</div>
+{coins}
 <div><h1>Sedra merged-mining testnet</h1>
 <p class="lead">A public test of <a href="{e(links['sip_url'])}">SIP-0001 merged mining</a> on <code>sedra-testnet-10</code>,
 with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-mined blocks next to them.</p>

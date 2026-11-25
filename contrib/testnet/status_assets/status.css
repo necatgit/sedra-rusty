@@ -174,8 +174,10 @@ main { max-width: 1160px; margin: 0 auto; padding: 1.5rem 16px 2rem; }
 
 /* Hero */
 .hero { display: grid; grid-template-columns: auto 1fr auto; gap: 1.25rem; align-items: center; margin-bottom: 1.25rem; }
-.hero-coins { display: flex; align-items: center; gap: 0.35rem; color: var(--muted); font-weight: 700; }
-.hero-coins img { width: 46px; height: 46px; }
+.hero-coins { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 0.25rem; color: var(--muted); }
+.hero-coins svg { width: 124px; height: auto; display: block; overflow: visible; }
+.hero-coins .branch path { stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; fill: none; }
+.hero-coins figcaption { font-size: 0.68rem; line-height: 1.25; text-align: center; max-width: 11rem; color: var(--dim); }
 .hero h1 {
   font-family: var(--f-display); font-size: 1.55rem; font-weight: 800; letter-spacing: 0.03em; margin-bottom: 0.3rem;
   background: var(--title-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -307,7 +309,9 @@ svg.chart .line { fill: none; stroke: var(--cyan); stroke-width: 2; vector-effec
 }
 @media (max-width: 640px) {
   .hero { grid-template-columns: 1fr; gap: 0.7rem; }
-  .hero-coins img { width: 34px; height: 34px; }
+  .hero-coins { flex-direction: row; justify-content: flex-start; gap: 0.7rem; }
+  .hero-coins svg { width: 96px; }
+  .hero-coins figcaption { text-align: left; }
   .hero h1 { font-size: 1.25rem; }
   .phase-chip { justify-self: start; white-space: normal; }
   .grid2, .join-cols { grid-template-columns: 1fr; }
