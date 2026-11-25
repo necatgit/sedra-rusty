@@ -448,12 +448,12 @@ def publish(out, target):
 
     One SSH connection per minute from the home network can trip the router's intrusion prevention (seen 2026-11-24:
     port 22 to the VPS blocked after about eight connections in a few minutes), so the unit sends rsync over a
-    persistent SSH master connection (systemd/sedra-testnet-statuspush.service). With $STATUS_PUSH_SOCKET set, the page
+    persistent SSH master connection (systemd/sedra-testnet-link.service). With $STATUS_PUSH_SOCKET set, the page
     is not pushed while that master socket is missing, instead of opening a new connection every minute."""
     sock = os.environ.get("STATUS_PUSH_SOCKET")
     if sock and (not os.path.exists(sock) or subprocess.run(
-            ["ssh", "-S", sock, "-O", "check", "statuspush"], capture_output=True).returncode != 0):
-        print(f"not published: no live SSH master on {sock} (sedra-testnet-statuspush.service down?)")
+            ["ssh", "-S", sock, "-O", "check", "vps"], capture_output=True).returncode != 0):
+        print(f"not published: no live SSH master on {sock} (sedra-testnet-link.service down?)")
         return
     files = [os.path.join(out, ASSETS), os.path.join(out, "status.json"), os.path.join(out, "index.html")]
     subprocess.run(["rsync", "-rt", "--delay-updates", "--chmod=D755,F644", "--timeout=30", *files, target], check=True)
@@ -674,7 +674,7 @@ def main():
     ap.add_argument("--pool", default="", help="public stratum address of the testnet pool")
     ap.add_argument("--report-url", default="", help="link to the reports (for example issue #13)")
     ap.add_argument("--criteria", default="", help="operator JSON for criteria 4-7 (see status_assets/criteria.example.json)")
-    ap.add_argument("--publish", default="", help="rsync target, e.g. statuspush@host:/ (a restricted key, see README)")
+    ap.add_argument("--publish", default="", help="rsync target, e.g. testnetlink@host:/ (a restricted key, see README)")
     for k, v in DEFAULTS.items():
         ap.add_argument("--" + k.replace("_", "-"), dest=k, default="", help=f"link (default {v})")
     build(ap.parse_args())

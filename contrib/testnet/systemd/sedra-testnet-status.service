@@ -5,18 +5,18 @@
 # Fill in the seed addresses, the pool and the VPS at launch. Needs Python 3.12 or newer, and rsync for --publish.
 [Unit]
 Description=Sedra public testnet status page
-After=sedra-testnet-monitor.service sedra-testnet-statuspush.service
+After=sedra-testnet-monitor.service sedra-testnet-link.service
 
 [Service]
 Type=oneshot
 User=sedra
-# rsync goes over the persistent connection of sedra-testnet-statuspush.service; without its socket nothing is pushed
-Environment="STATUS_PUSH_SOCKET=/run/sedra-testnet-statuspush/cm"
-Environment="RSYNC_RSH=ssh -S /run/sedra-testnet-statuspush/cm -o ControlMaster=no -o BatchMode=yes"
+# rsync goes over the persistent connection of sedra-testnet-link.service; without a live master nothing is pushed
+Environment="STATUS_PUSH_SOCKET=/var/lib/sedra-testnet-link/link.sock"
+Environment="RSYNC_RSH=ssh -S /var/lib/sedra-testnet-link/link.sock -o ControlMaster=no -o BatchMode=yes"
 ExecStart=/usr/bin/python3 /opt/sedra-testnet/status_page.py /var/lib/sedra-testnet-monitor --out /var/www/sedra-testnet \
   --activation 345600 --old old-go --seed <seed1>:22211 --seed <seed2>:22211 --pool stratum+tcp://<pool-host>:15555 \
   --report-url https://github.com/necatgit/sedra-project/issues/13 --criteria /etc/sedra-testnet/criteria.json \
-  --publish statuspush@<vps>:/
+  --publish testnetlink@<vps>:/
 Nice=10
 MemoryMax=256M
 TimeoutStartSec=50
