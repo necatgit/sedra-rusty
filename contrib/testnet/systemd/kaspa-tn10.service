@@ -1,0 +1,23 @@
+# SEDRA (#13): Kaspa testnet-10 node for the Sedra public testnet pool (upstream rusty-kaspa v2.1.0, tag commit
+# 01b532e8, built from source). Never mainnet. gRPC reachable only from VM 204 (nftables).
+[Unit]
+Description=Kaspa testnet-10 node (upstream rusty-kaspa 2.1.0) for the Sedra testnet pool
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kaspatn
+ExecStart=/opt/kaspa-tn10/kaspad --testnet --netsuffix=10 --utxoindex --appdir=/var/lib/kaspa-tn10 \
+  --rpclisten=0.0.0.0:16210 --disable-upnp --ram-scale=0.6 --yes
+Restart=on-failure
+RestartSec=15
+MemoryMax=10G
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/kaspa-tn10
+
+[Install]
+WantedBy=multi-user.target
