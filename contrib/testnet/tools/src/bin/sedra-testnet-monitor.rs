@@ -407,24 +407,19 @@ async fn follow_chain(
     Ok(chain)
 }
 
-/// The ZKas node's state into `zkas.csv`; returns its sink when it answered.
+/// The ZKas node's state into `zkas.csv`; returns its sink when it answered. Avoids GetBlockDagInfo and GetServerInfo:
+/// this client parses their network name and accepts only Sedra's (`zkas-testnet-10` fails, found on VM 204
+/// 2026-11-25), so the DAA score is the sink block's and the network column holds the fixed name `zkas`.
 async fn poll_zkas(node: &mut Node, out: &Path) -> Option<RpcHash> {
     let t = now();
     let r: Result<(String, RpcHash), String> = async {
         let c = node.client().await?;
-        let dag = c.get_block_dag_info().await.map_err(|e| e.to_string())?;
+        let sink = c.get_sink().await.map_err(|e| e.to_string())?.sink;
+        let daa = c.get_block(sink, false).await.map_err(|e| e.to_string())?.header.daa_score;
+        let count = c.get_block_count().await.map_err(|e| e.to_string())?.block_count;
         let info = c.get_info().await.map_err(|e| e.to_string())?;
-        let line = format!(
-            "{t},{},ok,{},{},{},{},{},{},",
-            node.name,
-            dag.network,
-            dag.virtual_daa_score,
-            dag.sink,
-            dag.block_count,
-            info.is_synced as u8,
-            clean(&info.server_version)
-        );
-        Ok((line, dag.sink))
+        let line = format!("{t},{},ok,zkas,{daa},{sink},{count},{},{},", node.name, info.is_synced as u8, clean(&info.server_version));
+        Ok((line, sink))
     }
     .await;
     let header = "unix_time,node,status,network,virtual_daa_score,sink,block_count,is_synced,server_version,error";

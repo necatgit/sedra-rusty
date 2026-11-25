@@ -81,7 +81,7 @@ def make(out, phase, step=10, seed=13, zkas=False):
             nd = min(daa, first_merged - 1) if node == "old-go" and first_merged else daa
             files["nodes.csv"].write(f"{t},{node},ok,sedra-testnet-10,{nd},{h(rnd)},{h(rnd)},{nd * 1.02:.0f},1,{peers},{ver},\n")
         if zkas:
-            files["zkas.csv"].write(f"{t},zkas,ok,testnet-10,{daa // 2},{h(rnd)},{daa // 2},1,zkas-v1.0.14-1-g312c6fb7,\n")
+            files["zkas.csv"].write(f"{t},zkas,ok,zkas,{daa // 2},{h(rnd)},{daa // 2},1,zkas-v1.0.14-1-g312c6fb7,\n")
     # network: every minute over the last 24 h; merged mining brings much more hashrate
     drift = 1.0
     for t in range(now - 86400, now + 1, 60):
