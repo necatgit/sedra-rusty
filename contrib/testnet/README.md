@@ -35,11 +35,13 @@ home: monitor -> CSVs -> status_page.py (every minute) --rsync over SSH--> VPS: 
   minutes old, it says so (in the page, and live in the browser when JavaScript is on).
 - Push key: a dedicated ed25519 key, owned by the `sedra` user on the monitor host (`/etc/sedra-testnet/statuspush_ed25519`),
   allowed on the VPS only for one user and one directory:
-  `restrict,command="rrsync -wo /var/www/sedra-testnet" ssh-ed25519 AAAA... statuspush` in
-  `~statuspush/.ssh/authorized_keys` (`rrsync` from the rsync package). The key cannot open a shell, forward ports or
-  write anywhere else.
-- One connection: `systemd/sedra-testnet-statuspush.service` keeps a single SSH master connection open, and the push
-  (one `rsync --delay-updates` per minute) goes over it. Opening a new SSH connection every minute from home could trip
+  `restrict,port-forwarding,permitopen="127.0.0.1:22210",command="rrsync -wo /var/www/sedra-testnet" ssh-ed25519 AAAA... statuspush`
+  in `~statuspush/.ssh/authorized_keys` (`rrsync` from the rsync package). The key cannot open a shell, read files,
+  write outside that directory, or forward to anything but seed2's local gRPC (seed2 runs without `--unsaferpc`). No
+  `from=`: the home line has a dynamic address.
+- One connection: `systemd/sedra-testnet-statuspush.service` keeps a single SSH master connection open. It carries the
+  monitor's tunnel to seed2's gRPC (`--node seed2=grpc://127.0.0.1:22220`) and the push (one `rsync --delay-updates`
+  per minute) goes over its socket. Opening a new SSH connection every minute from home could trip
   the home router's intrusion prevention, which blocked port 22 to the VPS after about eight connections in a few
   minutes on 2026-11-24. Without a live master the page is built but not pushed (`STATUS_PUSH_SOCKET`).
 - Web host: `web/Caddyfile` (Caddy from Debian, automatic Let's Encrypt; TCP 80 and 443 open; DNS A/AAAA record for the

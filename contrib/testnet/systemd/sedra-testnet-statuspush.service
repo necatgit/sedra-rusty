@@ -1,10 +1,12 @@
-# SEDRA (#13): one persistent SSH connection from the monitor host (home) to the public web host (VPS), which the status
-# page's rsync push reuses every minute (sedra-testnet-status.service, RSYNC_RSH with the same ControlPath). A new SSH
-# connection every minute could trip the home router's intrusion prevention, which blocked port 22 to the VPS after
-# about eight connections in a few minutes (2026-11-24). The key is restricted on the VPS to rrsync in the web
-# directory (README.md, "Status page"): this connection can do nothing else. Fill in <vps> at launch.
+# SEDRA (#13): ONE persistent SSH connection from the monitor host (home) to the VPS. It carries both the monitor's
+# link to seed2's gRPC (local 127.0.0.1:22220 -> VPS 127.0.0.1:22210, monitor: --node seed2=grpc://127.0.0.1:22220)
+# and the status page's rsync push, which reuses its ControlMaster socket every minute (sedra-testnet-status.service).
+# A new SSH connection every minute could trip the home router's intrusion prevention, which blocked port 22 to the
+# VPS after about eight connections in a few minutes (2026-11-24). On the VPS, the key is restricted to exactly this
+# (README.md, "Status page"): forwarding only to 127.0.0.1:22210, and rrsync -wo into the web directory, no shell.
+# seed2 runs without --unsaferpc, RPC on localhost only. Fill in <vps> at launch.
 [Unit]
-Description=Sedra testnet status page: SSH master connection to the web host
+Description=Sedra testnet: SSH link to the VPS (seed2 RPC tunnel and status page push)
 After=network-online.target
 Wants=network-online.target
 
@@ -12,6 +14,7 @@ Wants=network-online.target
 User=sedra
 RuntimeDirectory=sedra-testnet-statuspush
 ExecStart=/usr/bin/ssh -N -M -S /run/sedra-testnet-statuspush/cm -o ControlPersist=no \
+  -L 127.0.0.1:22220:127.0.0.1:22210 \
   -i /etc/sedra-testnet/statuspush_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile=/etc/sedra-testnet/statuspush_known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
   -o ExitOnForwardFailure=yes statuspush@<vps>
