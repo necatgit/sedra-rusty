@@ -1,0 +1,22 @@
+[Unit]
+Description=Testnet pool wallet daemon (Sedra testnet, test keys only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sedratn
+Group=sedratn
+EnvironmentFile=/data/testnet/pool/secrets/pool.env
+ExecStart=/data/testnet/bin/sedrawallet start-daemon --testnet -f /data/testnet/pool/wallets/sdr-keys.json -p ${SDR_WALLET_PW} -s 127.0.0.1:22210 -l 127.0.0.1:8182
+Restart=always
+RestartSec=30
+Nice=10
+MemoryMax=512M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/testnet/pool/wallets /data/testnet/home
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

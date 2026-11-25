@@ -1,0 +1,23 @@
+[Unit]
+Description=Testnet pool (Miningcore sedra-merged-mining 1a72553a): Kaspa testnet-10 parent, ZKas + Sedra testnet merged
+After=network-online.target postgresql.service sedra-testnet-seed1.service sedra-testnet-wallet-kas.service sedra-testnet-wallet-sdr.service
+Wants=network-online.target
+
+[Service]
+User=sedratn
+Group=sedratn
+WorkingDirectory=/data/testnet/pool/run
+ExecStart=/usr/bin/dotnet /data/testnet/pool/build/Miningcore.dll -c /data/testnet/pool/secrets/miningcore.json
+Restart=always
+RestartSec=30
+Nice=10
+MemoryMax=2G
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/testnet/pool/run /data/testnet/pool/logs
+PrivateTmp=yes
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+
+[Install]
+WantedBy=multi-user.target

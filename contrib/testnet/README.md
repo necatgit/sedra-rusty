@@ -12,8 +12,8 @@ pass-report template, design) are in the project repository, `necatgit/sedra-pro
 | `summary.py` | the monitor's CSVs as the numbers of the pass report |
 | `status_page.py` | the public status page (SIP-0003 §4.4): static `index.html` + `status.json` from the monitor's CSVs (phase and progress to ban start and activation, nodes and agreement, native vs merged-mined counts, share per tag, recent blocks). No payout scripts, no node errors. Run every minute by `systemd/sedra-testnet-status.timer`; any static web server serves the output |
 | `faucet.sh` | sends testnet SDR from the faucet wallet (Go sedrawallet) to one `sedratest:` address |
-| `systemd/` | units for a testnet node, the old Go node (criterion 3), the monitor and the status page, with `MemoryMax` |
-| `pool/miningcore-testnet.json` | Miningcore (branch `sedra-merged-mining`): Kaspa testnet-10 parent, Sedra testnet aux chain. `genesisHash` must be the testnet genesis |
+| `systemd/` | units for a testnet node, the old Go node (criterion 3), the monitor and the status page, the Kaspa testnet-10 and private ZKas nodes, the pool (`sedra-testnet-pool`) and its three wallet daemons (`sedra-testnet-wallet-{kas,sdr,zkas}`, localhost only; secrets come from an `EnvironmentFile`, never from the unit), with `MemoryMax` |
+| `pool/miningcore-testnet.json` | Miningcore (branch `sedra-merged-mining`): Kaspa testnet-10 parent, ZKas test chain and Sedra testnet as aux chains. Each `genesisHash` must be that chain's testnet genesis; the ZKas pool address must be shielded (`zkastest:p...`); `rewardCrossCheckUrl` is `off` on the parent and on the Sedra aux pool, which is written out for that reason |
 | `dryrun/` | a private dry run of the whole kit on one host (loopback, own ports and data dir, activation override) |
 
 The testnet release carries its activation score in `TESTNET_PARAMS` (0.2.0-testnet.1: 345,600; ban start
