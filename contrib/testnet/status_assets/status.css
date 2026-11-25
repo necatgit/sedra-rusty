@@ -285,6 +285,7 @@ ul.plain li { padding: 0.15rem 0; }
 
 /* Charts (server-side SVG) */
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+.chart-grid > div { min-width: 0; } /* a wide table scrolls inside its cell instead of widening the page */
 .legend { display: flex; gap: 1rem; font-size: 0.78rem; color: var(--dim); margin-bottom: 0.3rem; }
 .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 svg.chart { width: 100%; height: auto; display: block; }

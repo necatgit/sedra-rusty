@@ -8,9 +8,9 @@ pass-report template, design) are in the project repository, `necatgit/sedra-pro
 |---|---|
 | `build_tools.sh` | builds the two tools below into `tools/target/release/` |
 | `tools/` `sedra-testnet-miner` | native CPU miner over gRPC; `--sdm1` mines a block whose own coinbase carries a well-formed `SDM1` commitment (self-parent-ban test, SIP-0001 §4.5). Testnet and devnet only |
-| `tools/` `sedra-testnet-monitor` | polls nodes and writes `nodes.csv`, `blocks.csv` (every block native or merged-mined, with its coinbase tag) and `agreement.csv` (does every node have the reference chain). Go sedrad nodes are asked through `sedractl://HOST:PORT` |
+| `tools/` `sedra-testnet-monitor` | polls nodes and writes `nodes.csv`, `blocks.csv` (every block native or merged-mined, with its coinbase tag) and `agreement.csv` (does every node have the reference chain). Go sedrad nodes are asked through `sedractl://HOST:PORT`. With `--zkas NAME=grpc://HOST:PORT` it also follows the pool's private ZKas test chain (D11): `zkas.csv`, `zkas_blocks.csv`, and `shared_parents.csv` (a Sedra and a ZKas block from one Kaspa parent, matched by nonce: on both chains a merged block's nonce is the first 8 bytes of its parent's hash) |
 | `summary.py` | the monitor's CSVs as the numbers of the pass report |
-| `status_page.py`, `status_assets/` | the public status page (SIP-0003 §4.4), in the puddlepool.com look with a TESTNET banner: static `index.html` + `status.json` from the monitor's CSVs (phase with countdowns to ban start and activation, DAA, difficulty, hashrate estimate, nodes and agreement, native vs merged-mined counts per day and per tag, SIP-0003 criteria 1/2/3/8 live and 4-7 from the operator's `--criteria` file, join links, recent blocks). No payout scripts, no node errors. Works without JavaScript. Run every minute by `systemd/sedra-testnet-status.timer`; `--publish` pushes it to the web host. Tests: `python3 -m unittest discover -s contrib/testnet/tests` |
+| `status_page.py`, `status_assets/` | the public status page (SIP-0003 §4.4), in the puddlepool.com look with a TESTNET banner: static `index.html` + `status.json` from the monitor's CSVs (phase with countdowns to ban start and activation, DAA, difficulty, hashrate estimate, nodes and agreement, native vs merged-mined counts per day and per tag, SIP-0003 criteria 1/2/3/8 live and 4-7 from the operator's `--criteria` file, proposed criterion 9 (ZKas in the same coinbase) live for the shared parents, a ZKas section when the monitor runs with `--zkas`, join links, recent blocks). No payout scripts, no node errors. Works without JavaScript. Run every minute by `systemd/sedra-testnet-status.timer`; `--publish` pushes it to the web host. Tests: `python3 -m unittest discover -s contrib/testnet/tests` |
 | `faucet.sh` | sends testnet SDR from the faucet wallet (Go sedrawallet) to one `sedratest:` address |
 | `systemd/` | units for a testnet node, the old Go node (criterion 3), the monitor and the status page (with its SSH push connection), with `MemoryMax` |
 | `web/Caddyfile` | the web host for the status page (testnet.puddlepool.com on the VPS): static files, automatic Let's Encrypt, no client IPs in the log |
@@ -31,7 +31,8 @@ home: monitor -> CSVs -> status_page.py (every minute) --rsync over SSH--> VPS: 
 ```
 
 - Data: the monitor writes `nodes.csv`, `blocks.csv`, `agreement.csv` and `network.csv` (difficulty and hashrate
-  estimate of the reference node). The page shows what it last received with its time; when the data is more than five
+  estimate of the reference node; written once the chain is long enough for the 1,000-block estimate), and with
+  `--zkas` the ZKas files above. The page shows what it last received with its time; when the data is more than five
   minutes old, it says so (in the page, and live in the browser when JavaScript is on).
 - Push key: a dedicated ed25519 key, owned by the user that runs the monitor (`/var/lib/sedra-testnet-link/vps_link`; on VM 204 `/data/testnet/home/.ssh/vps_link`),
   allowed on the VPS only for one user and one directory:

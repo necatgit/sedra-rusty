@@ -2,6 +2,8 @@
 # node. gRPC listens on localhost only, so a node on another host is reached through an SSH tunnel
 # (ssh -N -L 22220:127.0.0.1:22210 seed2), never by opening its RPC port to the internet.
 # ALERT lines go to the journal: journalctl -u sedra-testnet-monitor | grep ALERT
+# D11 (2026-11-25): the testnet pool also merges a private ZKas test chain. To show it on the status page (proposed
+# criterion 9), add --zkas zkas=grpc://<zkas node>:16820 (gRPC reachable from this host only; no --unsaferpc needed).
 [Unit]
 Description=Sedra public testnet monitor (SIP-0003 pass criteria)
 After=network-online.target

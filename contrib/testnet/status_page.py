@@ -58,6 +58,8 @@ CRITERIA = [
     (6, "The Go sedrawallet sends and receives"),
     (7, "At least one participant outside this project runs a node or mines and reports"),
     (8, "At least two weeks after activation without a consensus failure"),
+    (9, "Proposed addition: one Kaspa testnet-10 parent carries both a ZKas and a Sedra commitment; both chains accept, "
+        "no block rejected because of the other tag, no double credit"),
 ]
 # state of a criterion -> label shown and CSS class
 STATES = {
@@ -127,7 +129,9 @@ def tail_rows(path, max_bytes=2_000_000):
 
 def fresh_state():
     return {"offset": 0, "header": None, "kinds": {}, "tags": {}, "days": {}, "first_merged": None, "sdm1": [],
-            "after_activation": {}, "reached": {}, "agree_offset": 0, "agree_header": None, "first_miss": {}}
+            "after_activation": {}, "reached": {}, "agree_offset": 0, "agree_header": None, "first_miss": {},
+            "zkas_offset": 0, "zkas_header": None, "zkas_kinds": {}, "zkas_days": {},
+            "shared_offset": 0, "shared_header": None, "shared_count": 0, "shared_first": None}
 
 
 def load_state(path):
@@ -162,7 +166,9 @@ def read_new(path, st, okey, hkey):
 def count_blocks(path, st, a, ban_start):
     new = read_new(path, st, "offset", "header")
     if new is None:  # blocks.csv replaced: recount everything
-        keep = {k: st[k] for k in ("agree_offset", "agree_header", "first_miss")}
+        keep = {k: st[k] for k in ("agree_offset", "agree_header", "first_miss", "zkas_offset", "zkas_header",
+                                   "zkas_kinds", "zkas_days", "shared_offset", "shared_header", "shared_count",
+                                   "shared_first")}
         st.clear()
         st.update(fresh_state() | keep)
         new = read_new(path, st, "offset", "header") or []
@@ -184,6 +190,33 @@ def count_blocks(path, st, a, ban_start):
             st["first_merged"] = {"hash": b["hash"], "daa_score": daa, "unix_time": int(b["unix_time"])}
         if "SDM1" in b["extra_data"]:
             st["sdm1"] = (st["sdm1"] + [{"hash": b["hash"], "daa_score": daa}])[-20:]
+
+
+def count_zkas(path, st):
+    """ZKas blocks (monitor --zkas, zkas_blocks.csv): kinds and per day, read incrementally like blocks.csv."""
+    new = read_new(path, st, "zkas_offset", "zkas_header")
+    if new is None:
+        st.update(zkas_offset=0, zkas_header=None, zkas_kinds={}, zkas_days={})
+        new = read_new(path, st, "zkas_offset", "zkas_header") or []
+    for b in new:
+        k = b["kind"]
+        st["zkas_kinds"][k] = st["zkas_kinds"].get(k, 0) + 1
+        d = dt.datetime.fromtimestamp(int(b["unix_time"]), dt.timezone.utc).strftime("%Y-%m-%d")
+        st["zkas_days"].setdefault(d, {})
+        st["zkas_days"][d][k] = st["zkas_days"][d].get(k, 0) + 1
+
+
+def count_shared(path, st):
+    """Kaspa parents that produced both a Sedra and a ZKas block (monitor's shared_parents.csv)."""
+    new = read_new(path, st, "shared_offset", "shared_header")
+    if new is None:
+        st.update(shared_offset=0, shared_header=None, shared_count=0, shared_first=None)
+        new = read_new(path, st, "shared_offset", "shared_header") or []
+    for r in new:
+        st["shared_count"] += 1
+        if st["shared_first"] is None:
+            st["shared_first"] = {"unix_time": int(r["unix_time"]), "parent_prefix": r["parent_prefix"],
+                                  "sedra_hash": r["sedra_hash"], "zkas_hash": r["zkas_hash"]}
 
 
 def count_agreement(path, st):
@@ -216,8 +249,9 @@ def load_criteria(path):
 
 
 def criteria_status(s, st, a, manual):
-    """Live status of the eight SIP-0003 criteria. 1, 2, 3 and 8 come from the monitor's data (the operator file
-    may still override them, e.g. with the ban test's result), 4 to 7 from the operator file."""
+    """Live status of the SIP-0003 criteria. 1, 2, 3 and 8 come from the monitor's data (the operator file may still
+    override them, e.g. with the ban test's result), 4 to 7 from the operator file. 9 (proposed addition, ZKas in the
+    same coinbase) is live for the shared parents; rejections and double credit come from the operator file."""
     daa, act, ban = s["virtual_daa_score"], a.activation, s["ban_start"]
     old = set(a.old)
     upgraded_miss = {n: m for n, m in st["first_miss"].items() if n not in old}
@@ -283,6 +317,17 @@ def criteria_status(s, st, a, manual):
         days = (s["data_time"] - reached) / 86400
         out[8] = ("passed" if days >= 14 else "running", f"day {min(days, 99):.1f} of 14 since the activation")
 
+    z = s["zkas"]
+    if not z:
+        out[9] = ("open", "no ZKas node configured on the monitor")
+    elif s["shared_parents"]["count"]:
+        out[9] = ("met", f"{s['shared_parents']['count']:,} Kaspa parents produced both a Sedra and a ZKas block; "
+                         "rejections and double credit are checked in the logs and the pool's accounting")
+    elif daa < act:
+        out[9] = ("waiting", f"Sedra merged mining starts at the activation; ZKas blocks so far: {sum(z['blocks_all_time'].values()):,}")
+    else:
+        out[9] = ("running", "no Kaspa parent with both a Sedra and a ZKas block seen yet")
+
     rows = []
     for n, text in CRITERIA:
         state, note = out[n]
@@ -301,6 +346,8 @@ def build(a):
     ban_start = max(0, a.activation - 2 * a.finality)
     count_blocks(os.path.join(a.monitor_dir, "blocks.csv"), st, a, ban_start)
     count_agreement(os.path.join(a.monitor_dir, "agreement.csv"), st)
+    count_zkas(os.path.join(a.monitor_dir, "zkas_blocks.csv"), st)
+    count_shared(os.path.join(a.monitor_dir, "shared_parents.csv"), st)
     t_now = now()
 
     # nodes: the newest row per node, plus the DAA rate of the reference node over the last hour
@@ -374,6 +421,25 @@ def build(a):
         })
 
     days = sorted(st["days"].items())[-30:]
+
+    # ZKas (monitor --zkas): absent unless the monitor follows a ZKas node
+    zkas = None
+    zkas_nodes = tail_rows(os.path.join(a.monitor_dir, "zkas.csv"), 200_000)
+    if zkas_nodes:
+        zr = zkas_nodes[-1]
+        zrecent = tail_rows(os.path.join(a.monitor_dir, "zkas_blocks.csv"), 2_000_000)
+        zkas = {
+            "node": zr["node"],
+            "reachable": zr["status"] == "ok",
+            "synced": zr.get("is_synced") == "1",
+            "virtual_daa_score": int(zr["virtual_daa_score"]) if zr["status"] == "ok" and zr["virtual_daa_score"] else None,
+            "version": zr.get("server_version", "") if zr["status"] == "ok" else "",
+            "seen": int(zr["unix_time"]),
+            "blocks_all_time": st["zkas_kinds"],
+            "blocks_last_24h": dict(Counter(b["kind"] for b in zrecent if int(b["unix_time"]) >= day_ago)),
+            "blocks_per_day": dict(sorted(st["zkas_days"].items())[-30:]),
+        }
+    shared_recent = tail_rows(os.path.join(a.monitor_dir, "shared_parents.csv"), 100_000)[-8:]
     status = {
         "network": "sedra-testnet-10",
         "test_network": True,
@@ -404,6 +470,10 @@ def build(a):
                           | {"tag": tag(b["extra_data"])} for b in recent_list],
         "seeds": a.seed,
         "pool": a.pool,
+        "zkas": zkas,
+        "shared_parents": {"count": st["shared_count"], "first": st["shared_first"],
+                           "recent": [{k: r[k] for k in ("unix_time", "parent_prefix", "sedra_hash", "zkas_hash")}
+                                      for r in reversed(shared_recent)]},
     }
     status["criteria"] = criteria_status(status, st, a, load_criteria(a.criteria))
 
@@ -570,6 +640,32 @@ def render(s, a, phase_key, hash_series, ver):
     h1 = s["blocks_last_hour"]
     merged_share_1h = 100 * h1.get("merged", 0) / max(1, sum(h1.values()))
     v = f"?v={ver}"
+    z = s["zkas"]
+    sp = s["shared_parents"]
+    zkas_coin = f'<span>+</span><img src="{ASSETS}/zkas.svg{v}" alt="ZKas">' if z else ""
+    zkas_html = ""
+    if z:
+        zall, z24 = z["blocks_all_time"], z["blocks_last_24h"]
+        rows_pairs = "".join(
+            f"<tr><td>{utc_s(r['unix_time'])[5:]}</td><td class=mono>{e(r['parent_prefix'])}…</td>"
+            f"<td class=mono>{e(r['sedra_hash'][:16])}…</td><td class=mono>{e(r['zkas_hash'][:16])}…</td></tr>"
+            for r in sp["recent"]) or '<tr><td colspan="4" class="muted">None yet: Sedra blocks are merged-mined from the activation on.</td></tr>'
+        ztip = f"{z['virtual_daa_score']:,}" if z["virtual_daa_score"] is not None else "-"
+        zkas_html = f"""
+<h3 id="zkas">ZKas test chain under the same Kaspa parents</h3>
+<p class="muted small">The testnet pool also merges a private ZKas test chain (pool only, not a public network), as the mainnet pool
+would. A Sedra block and a ZKas block share a Kaspa parent when their nonces match: on both chains a merged-mined block's nonce
+is the first 8 bytes of its parent's hash.</p>
+<div class="grid4 inner">
+<div class="card"><div class="card-label"><span class="sw merged"></span>ZKas merged-mined</div><div class="big">{zall.get('merged', 0):,}</div><div class="muted small">last 24 h: {z24.get('merged', 0):,} · native {zall.get('native', 0):,}</div></div>
+<div class="card"><div class="card-label">Shared Kaspa parents</div><div class="big {'good' if sp['count'] else ''}">{sp['count']:,}</div><div class="muted small">one parent, a Sedra and a ZKas block</div></div>
+<div class="card"><div class="card-label">ZKas tip (DAA)</div><div class="big">{ztip}</div><div class="muted small">{'reachable' if z['reachable'] else 'unreachable'} · {'synced' if z['synced'] else 'not synced'}</div></div>
+<div class="card"><div class="card-label">ZKas node</div><div class="big medium">{e(z['node'])}<span class="muted small mono">{e(z['version']) or '-'}</span></div></div>
+</div>
+<div class="chart-grid">
+<div><h3>ZKas blocks per day</h3><div class="legend"><span><i class="sw native"></i>native</span><span><i class="sw merged"></i>merged-mined</span></div>{svg_days(list(z['blocks_per_day'].items()))}</div>
+<div><h3>Newest shared parents</h3><div class="scroll"><table><thead><tr><th>seen (UTC)</th><th>Kaspa parent</th><th>Sedra block</th><th>ZKas block</th></tr></thead><tbody>{rows_pairs}</tbody></table></div></div>
+</div>"""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="60">
@@ -593,7 +689,7 @@ def render(s, a, phase_key, hash_series, ver):
 </div></header>
 <main>
 <section class="hero">
-<div class="hero-coins"><img src="{ASSETS}/sedra.svg{v}" alt="Sedra"><span>+</span><img src="{ASSETS}/kaspa.svg{v}" alt="Kaspa"></div>
+<div class="hero-coins"><img src="{ASSETS}/sedra.svg{v}" alt="Sedra"><span>+</span><img src="{ASSETS}/kaspa.svg{v}" alt="Kaspa">{zkas_coin}</div>
 <div><h1>Sedra merged-mining testnet</h1>
 <p class="lead">A public test of <a href="{e(links['sip_url'])}">SIP-0001 merged mining</a> on <code>sedra-testnet-10</code>,
 with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-mined blocks next to them.</p>
@@ -625,7 +721,7 @@ with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-
 </section>
 
 <section id="criteria" class="panel"><h2>SIP-0003 pass criteria</h2>
-<p class="muted small">Criteria 1, 2, 3 and 8 are read live from the monitor; 4 to 7 are recorded by the operator with evidence.
+<p class="muted small">Criteria 1, 2, 3 and 8 and the shared parents of 9 are read live from the monitor; 4 to 7 and the rest of 9 are recorded by the operator with evidence.
 The final verdict is the dated public report, not this page.</p>
 <ol class="crit-list">{rows_crit}</ol></section>
 
@@ -643,6 +739,7 @@ The final verdict is the dated public report, not this page.</p>
 <h3>Miners and pools seen (coinbase tag)</h3>
 <p class="muted small">{s['distinct_payout_scripts_last_24h']:,} distinct payout addresses in the last 24 h (not listed).</p>
 <div class="scroll"><table><thead><tr><th>tag</th><th>kind</th><th class=num>blocks</th><th class=num>share</th><th class=num>last 24 h</th></tr></thead><tbody>{rows_tags}</tbody></table></div>
+{zkas_html}
 </section>
 
 <section id="nodes" class="panel"><h2>Nodes</h2>

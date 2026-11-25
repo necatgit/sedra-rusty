@@ -54,6 +54,10 @@ class StatusPageTest(unittest.TestCase):
         for asset in ("status.css", "status.js", "logo.svg", "sedra.svg", "kaspa.svg"):
             self.assertTrue(os.path.exists(os.path.join(self.www, "status_assets", asset)), asset)
         self.assertFalse(os.path.exists(os.path.join(self.www, "status_assets", "criteria.example.json")))
+        # without --zkas on the monitor: no ZKas section, criterion 9 open
+        self.assertIsNone(s["zkas"])
+        self.assertEqual(c[9], "open")
+        self.assertNotIn("ZKas test chain", page)
 
     def test_ban_phase(self):
         fixtures.make(self.mon, "ban", step=50)
@@ -76,6 +80,47 @@ class StatusPageTest(unittest.TestCase):
         self.assertGreaterEqual(old["first_miss_daa"], info["first_merged"])
         self.assertIn("merged-mined", page)
 
+    def test_zkas_shared_parents_after_activation(self):
+        fixtures.make(self.mon, "merged", step=40, zkas=True)
+        with open(os.path.join(self.mon, "shared_parents.csv")) as f:
+            pairs = len(f.readlines()) - 1
+        s, page = run_page(self.mon, self.www)
+        self.assertGreater(pairs, 0)
+        self.assertEqual(s["shared_parents"]["count"], pairs)
+        self.assertEqual(len(s["shared_parents"]["recent"]), 8)
+        self.assertEqual(self.crit(s)[9], "met")
+        self.assertGreater(s["zkas"]["blocks_all_time"]["merged"], 0)
+        self.assertTrue(s["zkas"]["reachable"])
+        self.assertIn("ZKas test chain", page)
+        self.assertIn("zkas.svg", page)
+        # every pair shown is a Sedra block whose nonce is the parent prefix
+        with open(os.path.join(self.mon, "blocks.csv")) as f:
+            nonce = {r.split(",")[1]: r.strip().split(",")[-1] for r in f.readlines()[1:]}
+        for p in s["shared_parents"]["recent"]:
+            self.assertEqual(nonce[p["sedra_hash"]], p["parent_prefix"])
+
+    def test_zkas_before_activation_waits(self):
+        fixtures.make(self.mon, "ban", step=100, zkas=True)
+        s, page = run_page(self.mon, self.www)
+        self.assertEqual(s["shared_parents"]["count"], 0)
+        self.assertEqual(self.crit(s)[9], "waiting")
+        self.assertIn("None yet", page)
+
+    def test_zkas_operator_can_fail_criterion_9(self):
+        fixtures.make(self.mon, "merged", step=200, zkas=True)
+        crit = os.path.join(self.tmp.name, "criteria.json")
+        with open(crit, "w") as f:
+            json.dump({"9": {"status": "failed", "note": "ZKas rejected a block because of the SDM1 tag", "link": ""}}, f)
+        s, _ = run_page(self.mon, self.www, "--criteria", crit)
+        self.assertEqual(self.crit(s)[9], "failed")
+
+    def test_wide_tables_do_not_widen_the_page(self):
+        # regression 2026-11-25: the shared-parents table in a chart-grid cell made the phone page 620 px wide;
+        # grid cells must be allowed to shrink so the table scrolls inside its .scroll box
+        with open(os.path.join(HERE, "..", "status_assets", "status.css"), encoding="utf-8") as f:
+            css = f.read()
+        self.assertIn(".chart-grid > div { min-width: 0; }", css)
+
     def test_upgraded_node_miss_fails_criteria(self):
         fixtures.make(self.mon, "merged", step=40)
         with open(os.path.join(self.mon, "agreement.csv"), "a") as f:
@@ -92,21 +137,24 @@ class StatusPageTest(unittest.TestCase):
         self.assertEqual(self.crit(s)[1], "failed")
 
     def test_incremental_equals_full_recount(self):
-        fixtures.make(self.mon, "merged", step=40)
-        blocks = os.path.join(self.mon, "blocks.csv")
-        with open(blocks) as f:
-            lines = f.readlines()
-        half = len(lines) // 2
-        with open(blocks, "w") as f:
-            f.writelines(lines[:half])
+        fixtures.make(self.mon, "merged", step=40, zkas=True)
+        saved = {}
+        for name in ("blocks.csv", "zkas_blocks.csv", "shared_parents.csv"):
+            path = os.path.join(self.mon, name)
+            with open(path) as f:
+                saved[path] = f.readlines()
+            with open(path, "w") as f:
+                f.writelines(saved[path][:len(saved[path]) // 2])
         run_page(self.mon, self.www)
-        with open(blocks, "a") as f:
-            f.writelines(lines[half:])
+        for path, lines in saved.items():
+            with open(path, "a") as f:
+                f.writelines(lines[len(lines) // 2:])
         s_inc, _ = run_page(self.mon, self.www)
         os.remove(os.path.join(self.www, ".status-state.json"))
         s_full, _ = run_page(self.mon, self.www)
-        for k in ("blocks_all_time", "share_per_tag", "first_merged_block", "blocks_since_activation"):
+        for k in ("blocks_all_time", "share_per_tag", "first_merged_block", "blocks_since_activation", "shared_parents"):
             self.assertEqual(s_inc[k], s_full[k], k)
+        self.assertEqual(s_inc["zkas"]["blocks_all_time"], s_full["zkas"]["blocks_all_time"])
 
     def test_operator_criteria_and_escaping(self):
         fixtures.make(self.mon, "native", step=100)

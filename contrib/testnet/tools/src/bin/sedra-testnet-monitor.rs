@@ -11,6 +11,16 @@
 //!   `present=0`);
 //! - `network.csv`: once per poll, the reference node's difficulty and network hashrate estimate (status page).
 //!
+//! With `--zkas NAME=grpc://HOST:PORT` (decision D11, proposed criterion 9: the testnet pool also merges a private
+//! ZKas test chain under the same Kaspa parents) it follows that ZKas node's selected chain the same way:
+//!
+//! - `zkas.csv`: per poll, the ZKas node's state; `zkas_blocks.csv`: its blocks, same columns as `blocks.csv` (ZKas
+//!   uses the same kHeavyHash, so native/merged is decided the same way);
+//! - `shared_parents.csv`: a Sedra block and a ZKas block merged-mined from the same Kaspa parent. Both chains require a
+//!   merged block's nonce to be the first 8 bytes (LE) of its parent's hash (Sedra SIP-0001 §4.3, ZKas
+//!   `AuxPow::nonce_binding`), so equal nonces mean one parent. Matched in memory over the last 200,000 merged blocks of
+//!   each chain; pairs whose first block came before a monitor restart are not found.
+//!
 //! The first `--node` is the reference and must be an upgraded (merged-mining) node reached over gRPC. The Go node
 //! sedrad v2.0.0 does not answer this gRPC client (requests time out, found in the dry run 2026-11-20), so an old Go
 //! node is given as `sedractl://HOST:PORT` and asked through Go's own `sedractl` (binary from `$SEDRACTL`, default
@@ -18,13 +28,13 @@
 //! stdout for the operator.
 //!
 //! Usage: sedra-testnet-monitor --out DIR --node seed1=grpc://127.0.0.1:22210 [--node old-go=sedractl://127.0.0.1:22230]...
-//!        [--interval 60] [--depth 100] [--from CHAIN_BLOCK_HASH] [--once]
+//!        [--zkas zkas=grpc://192.168.0.28:16820] [--interval 60] [--depth 100] [--from CHAIN_BLOCK_HASH] [--once]
 
 use kaspa_consensus_core::header::Header;
 use kaspa_grpc_client::GrpcClient;
 use kaspa_rpc_core::{api::rpc::RpcApi, RpcBlock, RpcHash};
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
@@ -85,6 +95,7 @@ impl Node {
 struct Opts {
     out: PathBuf,
     nodes: Vec<Node>,
+    zkas: Option<Node>,
     interval: Duration,
     depth: u64,
     from: Option<RpcHash>,
@@ -92,12 +103,16 @@ struct Opts {
 }
 
 fn usage() -> ! {
-    eprintln!("usage: sedra-testnet-monitor --out DIR --node NAME=grpc://HOST:PORT [--node ...] [--interval SECS] [--depth DAA] [--from HASH] [--once]");
+    eprintln!(
+        "usage: sedra-testnet-monitor --out DIR --node NAME=grpc://HOST:PORT [--node ...] [--zkas NAME=grpc://HOST:PORT] \
+         [--interval SECS] [--depth DAA] [--from HASH] [--once]"
+    );
     std::process::exit(2)
 }
 
 fn parse() -> Opts {
     let (mut out, mut nodes, mut interval, mut depth, mut from, mut once) = (None, Vec::new(), 60, 100, None, false);
+    let mut zkas = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut val = || args.next().unwrap_or_else(|| usage());
@@ -107,6 +122,11 @@ fn parse() -> Opts {
                 let v = val();
                 let (name, url) = v.split_once('=').unwrap_or_else(|| usage());
                 nodes.push(Node { name: name.to_string(), url: url.to_string(), client: None });
+            }
+            "--zkas" => {
+                let v = val();
+                let (name, url) = v.split_once('=').unwrap_or_else(|| usage());
+                zkas = Some(Node { name: name.to_string(), url: url.to_string(), client: None });
             }
             "--interval" => interval = val().parse().unwrap_or_else(|_| usage()),
             "--depth" => depth = val().parse().unwrap_or_else(|_| usage()),
@@ -118,7 +138,7 @@ fn parse() -> Opts {
     if nodes.is_empty() {
         usage()
     }
-    Opts { out: out.unwrap_or_else(|| usage()), nodes, interval: Duration::from_secs(interval), depth, from, once }
+    Opts { out: out.unwrap_or_else(|| usage()), nodes, zkas, interval: Duration::from_secs(interval), depth, from, once }
 }
 
 fn now() -> u64 {
@@ -280,11 +300,55 @@ async fn poll_network(o: &mut Opts, ref_daa: u64) {
     append(&out, "network.csv", "unix_time,virtual_daa_score,difficulty,hashes_per_second", &line);
 }
 
-/// Follows the reference node's selected chain from the cursor and classifies every block each new chain block
-/// accepts (its merge set). Returns the chain blocks added, oldest first.
-async fn follow_chain(o: &mut Opts, st: &mut State, sink: RpcHash) -> Result<Vec<RpcBlock>, String> {
-    let out = o.out.clone();
-    let c = o.nodes[0].client().await?;
+const SEDRA: usize = 0;
+const ZKAS: usize = 1;
+const BLOCKS_HEADER: &str =
+    "unix_time,hash,daa_score,blue_score,timestamp_ms,kind,is_chain_block,red,accepted_by,payout_script,extra_data,nonce";
+
+/// Recent merged blocks of both chains by nonce, to find the Sedra and ZKas blocks from one Kaspa parent (see the
+/// module comment: on both chains a merged block's nonce is the first 8 bytes of its parent's hash).
+#[derive(Default)]
+struct Parents {
+    by_nonce: [HashMap<u64, RpcHash>; 2],
+    order: [VecDeque<u64>; 2],
+}
+
+impl Parents {
+    const KEEP: usize = 200_000;
+
+    /// Records a merged block of `chain` (SEDRA or ZKAS) and returns the other chain's block from the same parent.
+    fn add(&mut self, chain: usize, nonce: u64, hash: RpcHash) -> Option<RpcHash> {
+        if self.by_nonce[chain].insert(nonce, hash).is_none() {
+            self.order[chain].push_back(nonce);
+            if self.order[chain].len() > Self::KEEP {
+                let old = self.order[chain].pop_front().unwrap();
+                self.by_nonce[chain].remove(&old);
+            }
+        }
+        self.by_nonce[1 - chain].get(&nonce).copied()
+    }
+}
+
+/// The first 8 bytes of the Kaspa parent's hash, as hex, from a merged block's nonce.
+fn parent_prefix(nonce: u64) -> String {
+    hex(&nonce.to_le_bytes())
+}
+
+/// Follows a node's selected chain from the cursor and classifies every block each new chain block accepts (its merge
+/// set) into `file`. Merged blocks go to `parents`; a match with the other chain is written to shared_parents.csv.
+/// Returns the chain blocks added, oldest first.
+#[allow(clippy::too_many_arguments)]
+async fn follow_chain(
+    node: &mut Node,
+    out: &Path,
+    file: &str,
+    chain_id: usize,
+    st: &mut State,
+    parents: &mut Parents,
+    sink: RpcHash,
+) -> Result<Vec<RpcBlock>, String> {
+    let name = node.name.clone();
+    let c = node.client().await?;
     let start = match st.cursor {
         Some(h) => h,
         None => {
@@ -295,7 +359,7 @@ async fn follow_chain(o: &mut Opts, st: &mut State, sink: RpcHash) -> Result<Vec
     let vc = c.get_virtual_chain_from_block(start, false).await.map_err(|e| e.to_string())?;
     let t = now();
     for removed in &vc.removed_chain_block_hashes {
-        println!("ALERT {t} reference chain reorg: {removed} left the selected chain");
+        println!("ALERT {t} {name} chain reorg: {removed} left the selected chain");
     }
     let mut chain = Vec::new();
     for h in &vc.added_chain_block_hashes {
@@ -309,25 +373,73 @@ async fn follow_chain(o: &mut Opts, st: &mut State, sink: RpcHash) -> Result<Vec
             let b = c.get_block(*m, true).await.map_err(|e| e.to_string())?;
             let (script, extra) = b.transactions.first().map(|tx| coinbase_parts(&tx.payload)).unwrap_or_default();
             let is_chain = b.verbose_data.as_ref().map_or(false, |v| v.is_chain_block);
+            let k = kind(&b);
+            let nonce = b.header.nonce;
             append(
-                &out,
-                "blocks.csv",
-                "unix_time,hash,daa_score,blue_score,timestamp_ms,kind,is_chain_block,red,accepted_by,payout_script,extra_data",
+                out,
+                file,
+                BLOCKS_HEADER,
                 &format!(
-                    "{t},{m},{},{},{},{},{},{},{h},{script},{extra}",
+                    "{t},{m},{},{},{},{k},{},{},{h},{script},{extra},{}",
                     b.header.daa_score,
                     b.header.blue_score,
                     b.header.timestamp,
-                    kind(&b),
                     is_chain as u8,
-                    reds.contains(m) as u8
+                    reds.contains(m) as u8,
+                    parent_prefix(nonce)
                 ),
             );
+            if k == "merged" {
+                if let Some(other) = parents.add(chain_id, nonce, *m) {
+                    let (sedra, zkas) = if chain_id == SEDRA { (*m, other) } else { (other, *m) };
+                    append(
+                        out,
+                        "shared_parents.csv",
+                        "unix_time,parent_prefix,sedra_hash,zkas_hash",
+                        &format!("{t},{},{sedra},{zkas}", parent_prefix(nonce)),
+                    );
+                }
+            }
         }
         st.cursor = Some(*h);
         chain.push(cb);
     }
     Ok(chain)
+}
+
+/// The ZKas node's state into `zkas.csv`; returns its sink when it answered.
+async fn poll_zkas(node: &mut Node, out: &Path) -> Option<RpcHash> {
+    let t = now();
+    let r: Result<(String, RpcHash), String> = async {
+        let c = node.client().await?;
+        let dag = c.get_block_dag_info().await.map_err(|e| e.to_string())?;
+        let info = c.get_info().await.map_err(|e| e.to_string())?;
+        let line = format!(
+            "{t},{},ok,{},{},{},{},{},{},",
+            node.name,
+            dag.network,
+            dag.virtual_daa_score,
+            dag.sink,
+            dag.block_count,
+            info.is_synced as u8,
+            clean(&info.server_version)
+        );
+        Ok((line, dag.sink))
+    }
+    .await;
+    let header = "unix_time,node,status,network,virtual_daa_score,sink,block_count,is_synced,server_version,error";
+    match r {
+        Ok((line, sink)) => {
+            append(out, "zkas.csv", header, &line);
+            Some(sink)
+        }
+        Err(e) => {
+            node.client = None;
+            println!("ALERT {t} ZKas node {} unreachable: {}", node.name, clean(&e));
+            append(out, "zkas.csv", header, &format!("{t},{},error,,,,,,,{}", node.name, clean(&e)));
+            None
+        }
+    }
 }
 
 /// Asks every other node about the newest recorded chain block that is at least `depth` DAA deep.
@@ -382,13 +494,21 @@ async fn main() {
     let cursor_file = o.out.join("cursor");
     let cursor = o.from.or_else(|| fs::read_to_string(&cursor_file).ok().and_then(|s| RpcHash::from_str(s.trim()).ok()));
     let mut st = State { cursor, seen: HashSet::new(), seen_order: VecDeque::new() };
+    let zkas_cursor_file = o.out.join("zkas_cursor");
+    let zkas_cursor = fs::read_to_string(&zkas_cursor_file).ok().and_then(|s| RpcHash::from_str(s.trim()).ok());
+    let mut zst = State { cursor: zkas_cursor, seen: HashSet::new(), seen_order: VecDeque::new() };
+    let mut parents = Parents::default();
     let mut recent: VecDeque<(u64, RpcHash)> = VecDeque::new();
     println!("monitoring {} nodes, reference {} ({}), output {}", o.nodes.len(), o.nodes[0].name, o.nodes[0].url, o.out.display());
+    if let Some(z) = &o.zkas {
+        println!("following ZKas node {} ({}) for shared Kaspa parents", z.name, z.url);
+    }
     loop {
         let polled = poll_nodes(&mut o).await;
+        let out = o.out.clone();
         if let Some(Some((ref_daa, sink))) = polled.first().copied() {
             poll_network(&mut o, ref_daa).await;
-            match follow_chain(&mut o, &mut st, sink).await {
+            match follow_chain(&mut o.nodes[0], &out, "blocks.csv", SEDRA, &mut st, &mut parents, sink).await {
                 Ok(chain) => {
                     for b in chain {
                         recent.push_back((b.header.daa_score, b.header.hash));
@@ -407,9 +527,60 @@ async fn main() {
             }
             check_agreement(&mut o, &recent, ref_daa).await;
         }
+        if let Some(z) = o.zkas.as_mut() {
+            if let Some(zsink) = poll_zkas(z, &out).await {
+                match follow_chain(z, &out, "zkas_blocks.csv", ZKAS, &mut zst, &mut parents, zsink).await {
+                    Ok(_) => {
+                        if let Some(c) = zst.cursor {
+                            fs::write(&zkas_cursor_file, c.to_string()).ok();
+                        }
+                    }
+                    Err(e) => {
+                        z.client = None;
+                        println!("ALERT {} following the ZKas chain failed: {}", now(), clean(&e));
+                    }
+                }
+            }
+        }
         if o.once {
             break;
         }
         tokio::time::sleep(o.interval).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn h(b: u8) -> RpcHash {
+        RpcHash::from_bytes([b; 32])
+    }
+
+    #[test]
+    fn shared_parent_found_from_either_side() {
+        let mut p = Parents::default();
+        assert_eq!(p.add(SEDRA, 7, h(1)), None);
+        assert_eq!(p.add(ZKAS, 8, h(2)), None);
+        assert_eq!(p.add(ZKAS, 7, h(3)), Some(h(1)));
+        assert_eq!(p.add(SEDRA, 8, h(4)), Some(h(2)));
+    }
+
+    #[test]
+    fn old_nonces_are_forgotten() {
+        let mut p = Parents::default();
+        p.add(SEDRA, 0, h(1));
+        for n in 1..=Parents::KEEP as u64 {
+            p.add(SEDRA, n, h(2));
+        }
+        assert_eq!(p.add(ZKAS, 0, h(3)), None);
+        assert_eq!(p.add(ZKAS, 1, h(3)), Some(h(2)));
+    }
+
+    #[test]
+    fn prefix_is_the_parent_hash_start() {
+        // nonce = u64::from_le_bytes(parent_hash[0..8])
+        let parent = [0xab, 0xcd, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
+        assert_eq!(parent_prefix(u64::from_le_bytes(parent)), "abcd010203040506");
     }
 }
