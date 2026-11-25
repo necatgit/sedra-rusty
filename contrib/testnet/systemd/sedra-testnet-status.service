@@ -1,18 +1,25 @@
 # SEDRA (#13): rebuilds the public status page (contrib/testnet/status_page.py) from the monitor's CSV files.
-# Called every minute by sedra-testnet-status.timer. The web server (any static server) serves /var/www/sedra-testnet;
-# it needs no access to a node. Fill in the seed addresses and the pool at launch.
+# Called every minute by sedra-testnet-status.timer. Runs on the monitor host (at home); --publish copies the page to
+# the public web host (the VPS, testnet.puddlepool.com) with a key that the VPS restricts to its web directory
+# (README.md, "Status page"). Without --publish, any static web server on this host can serve /var/www/sedra-testnet.
+# Fill in the seed addresses, the pool and the VPS at launch. Needs Python 3.12 or newer, and rsync for --publish.
 [Unit]
 Description=Sedra public testnet status page
-After=sedra-testnet-monitor.service
+After=sedra-testnet-monitor.service sedra-testnet-statuspush.service
 
 [Service]
 Type=oneshot
 User=sedra
+# rsync goes over the persistent connection of sedra-testnet-statuspush.service; without its socket nothing is pushed
+Environment="STATUS_PUSH_SOCKET=/run/sedra-testnet-statuspush/cm"
+Environment="RSYNC_RSH=ssh -S /run/sedra-testnet-statuspush/cm -o ControlMaster=no -o BatchMode=yes"
 ExecStart=/usr/bin/python3 /opt/sedra-testnet/status_page.py /var/lib/sedra-testnet-monitor --out /var/www/sedra-testnet \
   --activation 345600 --old old-go --seed <seed1>:22211 --seed <seed2>:22211 --pool stratum+tcp://<pool-host>:15555 \
-  --report-url https://github.com/necatgit/sedra-project/issues/13
+  --report-url https://github.com/necatgit/sedra-project/issues/13 --criteria /etc/sedra-testnet/criteria.json \
+  --publish statuspush@<vps>:/
 Nice=10
 MemoryMax=256M
+TimeoutStartSec=50
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true

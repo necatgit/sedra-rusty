@@ -1,0 +1,6 @@
+{
+  "4": {"status": "open", "note": "fresh node sync starts after the first pruning point above the activation (about day 7)"},
+  "5": {"status": "running", "note": "first KAS and SDR testnet payouts sent; per-miner addresses checked with two miners", "link": "https://github.com/necatgit/sedra-project/issues/13"},
+  "6": {"status": "met", "note": "sedrawallet send and receive on the public testnet", "link": "https://github.com/necatgit/sedra-project/issues/13"},
+  "7": {"status": "open", "note": "waiting for a report from outside the project"}
+}

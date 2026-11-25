@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="kasGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#70c7ba" />
+      <stop offset="100%" stop-color="#1e786b" />
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#kasGrad)" />
+  <circle cx="50" cy="50" r="42" fill="#0d1b2a" />
+  <path d="M36 28 L36 72 M36 50 L64 28 M48 40 L64 72" fill="none" stroke="#70c7ba" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

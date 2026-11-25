@@ -1,0 +1,44 @@
+# SEDRA (#13): Caddy on the public web host (the VPS) for the testnet status page. Caddy gets and renews the Let's
+# Encrypt certificate itself (needs TCP 80 and 443 open and the DNS name pointing at this host). The page is plain
+# files that the monitor host pushes into /var/www/sedra-testnet (README.md, "Status page"); nothing here talks to a
+# node. Install: apt install caddy; copy this file to /etc/caddy/Caddyfile; systemctl reload caddy.
+testnet.puddlepool.com {
+	root * /var/www/sedra-testnet
+	file_server
+	encode gzip
+
+	# style-src 'unsafe-inline': the progress bars set their width in a style attribute.
+	# script-src: the hash is that of the one inline script in index.html (theme before first paint);
+	# tests/test_status_page.py fails when the two differ
+	# the page and its data change every minute; the assets carry a ?v= content hash
+	@live path / /index.html /status.json
+	header @live Cache-Control "no-cache"
+	header /status_assets/* Cache-Control "public, max-age=86400"
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self'; script-src 'self' 'sha256-MCNKH14fHYVD0xLAPt5BIFYAQK2+f2lTZvwxb7PgMjE='; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+		-Server
+	}
+	# the state file and temporary files are never pushed, but never serve dotfiles anyway
+	@hidden path */.*
+	respond @hidden 404
+
+	log {
+		output file /var/log/caddy/testnet-access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		# no client IPs in the log: the page needs none
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip delete
+				request>client_ip delete
+				request>headers delete
+			}
+		}
+	}
+}

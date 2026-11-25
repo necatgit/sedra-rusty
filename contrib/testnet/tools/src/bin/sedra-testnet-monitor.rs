@@ -8,7 +8,8 @@
 //!   with the coinbase's payout script and extra data (criterion 2; blocks per pool, SIP-0001 §8);
 //! - `agreement.csv`: once per poll, the newest reference chain block at least `--depth` DAA deep, and whether every
 //!   other node has it and has it on its selected chain (criteria 1 and 8; an old node after activation shows
-//!   `present=0`).
+//!   `present=0`);
+//! - `network.csv`: once per poll, the reference node's difficulty and network hashrate estimate (status page).
 //!
 //! The first `--node` is the reference and must be an upgraded (merged-mining) node reached over gRPC. The Go node
 //! sedrad v2.0.0 does not answer this gRPC client (requests time out, found in the dry run 2026-11-20), so an old Go
@@ -266,6 +267,19 @@ async fn poll_nodes(o: &mut Opts) -> Vec<Option<(u64, RpcHash)>> {
     result
 }
 
+/// The reference node's difficulty and its network hashrate estimate (DAA window of 1,000 blocks) into `network.csv`,
+/// for the status page. A failed call only leaves the poll out; nodes.csv already records reachability.
+async fn poll_network(o: &mut Opts, ref_daa: u64) {
+    let out = o.out.clone();
+    let t = now();
+    let Ok(c) = o.nodes[0].client().await else { return };
+    let (Ok(dag), Ok(hps)) = (c.get_block_dag_info().await, c.estimate_network_hashes_per_second(1000, None).await) else {
+        return;
+    };
+    let line = format!("{t},{ref_daa},{},{hps}", dag.difficulty);
+    append(&out, "network.csv", "unix_time,virtual_daa_score,difficulty,hashes_per_second", &line);
+}
+
 /// Follows the reference node's selected chain from the cursor and classifies every block each new chain block
 /// accepts (its merge set). Returns the chain blocks added, oldest first.
 async fn follow_chain(o: &mut Opts, st: &mut State, sink: RpcHash) -> Result<Vec<RpcBlock>, String> {
@@ -373,6 +387,7 @@ async fn main() {
     loop {
         let polled = poll_nodes(&mut o).await;
         if let Some(Some((ref_daa, sink))) = polled.first().copied() {
+            poll_network(&mut o, ref_daa).await;
             match follow_chain(&mut o, &mut st, sink).await {
                 Ok(chain) => {
                     for b in chain {
