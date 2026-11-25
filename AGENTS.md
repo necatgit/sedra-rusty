@@ -1,7 +1,7 @@
 # AGENTS.md: working rules for sedra-rusty
 
 These rules apply to people and AI agents alike. They follow the project rules in
-[necatgit/sedra-project](https://github.com/necatgit/sedra-project) (`AGENTS.md` there; public from late November 2026); this file adds
+[necatgit/sedra-project](https://github.com/necatgit/sedra-project) (`AGENTS.md` there; public since 2026-11-21); this file adds
 what is specific to node code. `SEDRA.md` lists every change from upstream.
 
 ## Consensus first
@@ -39,6 +39,24 @@ cargo test --release --workspace --exclude kaspa-wasm --exclude kaspa-wallet-psk
 - Compare against the recorded baseline of unmodified v1.0.1. A failure that also happens on the tag `v1.0.1` is upstream,
   not ours; a new failure is ours and must be fixed or explained.
 - Never claim something was built or tested unless it was actually run.
+
+## Documentation
+
+Shared rule "One fact, one source" (described in the project repository's `AGENTS.md`, section "Keeping documentation
+current"): every fact has one owning document, mirrors say the same, and a change updates every copy in the same
+session. For this repository:
+
+- `SEDRA.md` owns the list of changes from upstream, on the branch that carries the code: update it in the same
+  commit as the code change. When a feature or release branch merges, its `SEDRA.md` entries merge with it.
+- Releases: the signed tag, the GitHub release and its rebuild issue own the release facts; `README.md` and the
+  release docs mirror them, and so do the project's `README.md` and `ROADMAP.md`.
+- `contrib/testnet/` holds the testnet kit's code and how to run it; the testnet's decisions, rehearsal and launch
+  state are owned by the project repository's `testnet/` folder. Link there instead of repeating them.
+- When a fact changes (a version, a branch, a port, a date), search this repository, `sedra-project` and `sedra-sips`
+  for the old wording and fix every live copy; comment on the issue when the state of a piece of work changes.
+- Never write "Verified", "done" or "passed" before the build, test or check actually ran; give time-sensitive claims
+  their observation date; corrections get a dated note, never a silent rewrite.
+- Documentation-only commits go to `dev` (or the feature branch they describe), never directly to `main`.
 
 ## Safety
 
