@@ -182,7 +182,9 @@ the node with `--utxoindex` and point the wallet's `--rpcserver` at it; the wall
 
 Not launched yet (2026-11-26). The Sedra team agreed on 2026-11-24 (SIP-0003 Q51; with a fresh chain Q52 is no longer
 a condition), the release `sedra-v0.2.0-testnet.1` (below) was published as a pre-release on 2026-11-25 after a
-rehearsal on the real hosts, and the start, Tue 2026-12-01, was announced by the Sedra team on 2026-11-26
+rehearsal on the real hosts, and the start, Tue 2026-12-01, was announced by the Sedra team on 2026-11-26. The chain
+itself starts from genesis on 2026-11-27 10:00 UTC (decided 2026-11-26, same release and heights), so merged mining
+activates about 2026-12-01
 ([sedra-project#13](https://github.com/necatgit/sedra-project/issues/13#issuecomment-7192048626)). Guide, runbook and report template
 are in the project repository under `testnet/`.
 
