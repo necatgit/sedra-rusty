@@ -2,7 +2,9 @@
 
 Tools, configs and scripts for the public merged-mining testnet. The documents (participant guide, operator runbook,
 pass-report template, design) are in the project repository, `necatgit/sedra-project`, directory `testnet/`.
-**Not launched**: the launch waits for the Sedra team's agreement (SIP-0003 Q51, Q52).
+**Not launched yet** (2026-11-26): the Sedra team agreed on 2026-11-24 (SIP-0003 Q51); release `sedra-v0.2.0-testnet.1`
+published as a pre-release 2026-11-25; start Tue 2026-12-01, announced by the Sedra team on 2026-11-26
+([sedra-project#13](https://github.com/necatgit/sedra-project/issues/13#issuecomment-7192048626)).
 
 | Path | What |
 |---|---|
