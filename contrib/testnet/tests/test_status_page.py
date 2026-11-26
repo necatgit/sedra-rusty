@@ -80,6 +80,36 @@ class StatusPageTest(unittest.TestCase):
         self.assertGreaterEqual(old["first_miss_daa"], info["first_merged"])
         self.assertIn("merged-mined", page)
 
+    def test_node_software_and_roles(self):
+        # before activation: the old node looks healthy and its row says what will happen
+        fixtures.make(self.mon, "native", step=200)
+        s, page = run_page(self.mon, self.www, "--software", "seed1=sedra-rusty 0.2.0-testnet.1 (Rust)",
+                           "--about", "seed1=public seed, mines", "--about", "old-go=unchanged <control> node")
+        nodes = {n["node"]: n for n in s["nodes"]}
+        self.assertEqual(nodes["seed1"]["software"], "sedra-rusty 0.2.0-testnet.1 (Rust)")
+        self.assertEqual(nodes["seed2"]["software"], "sedra-rusty (Rust)")  # default for upgraded nodes
+        self.assertEqual(nodes["old-go"]["software"], "Go sedrad")  # default for --old
+        self.assertEqual(nodes["seed1"]["about"], "public seed, mines")
+        self.assertIn("reports v2.0.0", page)
+        self.assertIn("unchanged &lt;control&gt; node; stops following at the first merged-mined block "
+                      "(activation DAA 345,600; criterion 3)", page)
+        self.assertTrue(nodes["old-go"]["has_reference_chain"])
+        self.assertNotIn("pill bad", page.split('id="nodes"')[1].split("</section>")[0])
+        # after activation: the old node's split is the expected outcome, not a red failure
+        fixtures.make(self.mon, "merged", step=200)
+        os.remove(os.path.join(self.www, ".status-state.json"))
+        s, page = run_page(self.mon, self.www)
+        nodes_html = page.split('id="nodes"')[1].split("</section>")[0]
+        self.assertIn("no, as expected", nodes_html)
+        self.assertIn("Stopped following at the first merged-mined block, as predicted (criterion 3)", nodes_html)
+        self.assertNotIn("pill bad", nodes_html)
+
+    def test_bad_node_label_is_rejected(self):
+        fixtures.make(self.mon, "native", step=200)
+        r = subprocess.run([sys.executable, PAGE, self.mon, "--out", self.www, "--about", "seed1"], capture_output=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(b"NAME=TEXT", r.stderr)
+
     def test_zkas_shared_parents_after_activation(self):
         fixtures.make(self.mon, "merged", step=40, zkas=True)
         with open(os.path.join(self.mon, "shared_parents.csv")) as f:

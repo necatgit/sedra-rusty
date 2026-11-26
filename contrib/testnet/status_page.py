@@ -10,10 +10,13 @@ the page can be built next to the monitor and copied to a public web host (`--pu
 Usage:
   python3 status_page.py MONITOR_DIR --out WWW_DIR [--activation 345600] [--finality 86400]
          [--old old-go] [--seed host:22211 ...] [--pool stratum+tcp://host:15555] [--report-url URL]
+         [--software NAME=TEXT ...] [--about NAME=TEXT ...]
          [--criteria criteria.json] [--publish user@host:/var/www/testnet/]
 
 Shown: a TEST NETWORK banner; the phase with live countdowns to the ban start and the activation; tip DAA score, DAA
-rate, difficulty and hashrate estimate; every node with its state and whether it still has the reference chain;
+rate, difficulty and hashrate estimate; every node with its software (the operator's `--software` label, else Rust
+sedra-rusty for upgraded and Go sedrad for `--old` nodes, plus the version the node reports over RPC), a one-line
+role (`--about`), its state and whether it still has the reference chain;
 blocks native and merged-mined (all time, last 24 h, per day, per coinbase tag); the SIP-0003 pass criteria (1, 2, 3
 and 8 from the monitor's data, 4 to 7 from the operator's `--criteria` file); how to join (guide, faucet, release,
 checksums, seeds, pool); the most recent blocks. Not shown on purpose: payout scripts (only how many distinct ones),
@@ -415,6 +418,8 @@ def build(a):
             "virtual_daa_score": int(r["virtual_daa_score"]) if r["status"] == "ok" and r["virtual_daa_score"] else None,
             "peers": int(r["peers"]) if r["status"] == "ok" and r["peers"] else None,
             "version": r.get("server_version", "") if r["status"] == "ok" else "",
+            "software": a.software.get(n) or ("Go sedrad" if n in a.old else "sedra-rusty (Rust)"),
+            "about": a.about.get(n, ""),
             "seen": int(r["unix_time"]),
             "has_reference_chain": None if n == ref or not ag else (ag["present"] == "1" and ag["is_chain_block"] == "1"),
             "first_miss_daa": miss["daa_score"] if miss else None,
@@ -621,13 +626,38 @@ def render(s, a, phase_key, hash_series, ver):
                 f'<div class="bar"><i style="width:{pct:.1f}%"></i></div>'
                 f'<div class="muted small">DAA {target:,} · {remaining:,} to go · {e(when)}</div></div>')
 
+    def chain_cell(n):
+        if n["role"] == "reference":
+            return '<span class=muted>reference</span>'
+        if n["old"] and n["has_reference_chain"] is False and s["activation_eta"]["reached"]:
+            # the old node leaving the chain at activation is criterion 3 working, not a failure
+            return '<span class="pill wait" title="expected: an old node rejects merged-mined blocks">no, as expected</span>'
+        return yesno(n["has_reference_chain"])
+
+    def node_cell(n):
+        about = n["about"]
+        if n["old"]:
+            plan = (f"stops following at the first merged-mined block (activation DAA {s['activation']:,}; criterion 3)"
+                    if not s["activation_eta"]["reached"] else
+                    "stopped following at the first merged-mined block, as predicted (criterion 3)"
+                    if n["has_reference_chain"] is False else
+                    "expected to stop following at the first merged-mined block (criterion 3)")
+            about = f"{about}; {plan}" if about else plan[0].upper() + plan[1:]
+        return f"<b>{e(n['node'])}</b>" + (f'<div class="node-about">{e(about)}</div>' if about else "")
+
+    def software_cell(n):
+        ver = f'<div class="muted small mono">reports v{e(n["version"])}</div>' if n["version"] else ""
+        return f"{e(n['software'])}{ver}"
+
+    role_name = {"reference": "upgraded, reference", "upgraded": "upgraded"}
     ok_nodes = sum(1 for n in s["nodes"] if n["reachable"])
     peers = [n["peers"] for n in s["nodes"] if n["peers"] is not None]
     rows_nodes = "".join(
-        f"<tr><td><b>{e(n['node'])}</b></td><td>{e(n['role'])}</td><td>{yesno(n['reachable'])}</td><td>{yesno(n['synced'])}</td>"
+        f"<tr><td>{node_cell(n)}</td><td>{software_cell(n)}</td><td>{e(role_name.get(n['role'], n['role']))}</td>"
+        f"<td>{yesno(n['reachable'])}</td><td>{yesno(n['synced'])}</td>"
         f"<td class=num>{f'{n['virtual_daa_score']:,}' if n['virtual_daa_score'] is not None else '-'}</td>"
-        f"<td class=num>{n['peers'] if n['peers'] is not None else '-'}</td><td class=mono>{e(n['version']) or '-'}</td>"
-        f"<td>{'<span class=muted>reference</span>' if n['role'] == 'reference' else yesno(n['has_reference_chain'])}</td>"
+        f"<td class=num>{n['peers'] if n['peers'] is not None else '-'}</td>"
+        f"<td>{chain_cell(n)}</td>"
         f"<td class=num>{f'{n['first_miss_daa']:,}' if n['first_miss_daa'] is not None else '<span class=muted>none</span>'}</td></tr>"
         for n in s["nodes"]) or '<tr><td colspan="9" class="muted">No node data yet.</td></tr>'
     rows_blocks = "".join(
@@ -764,9 +794,12 @@ The final verdict is the dated public report, not this page.</p>
 </section>
 
 <section id="nodes" class="panel"><h2>Nodes</h2>
-<p class="muted small">"Has the chain": the node has the newest reference chain block that is at least 100 DAA deep, on its selected chain.
-Upgraded nodes must always say yes; the old node is expected to say no from the first merged-mined block on.</p>
-<div class="scroll"><table><thead><tr><th>node</th><th>role</th><th>reachable</th><th>synced</th><th class=num>DAA</th><th class=num>peers</th><th>version</th><th>has the chain</th><th class=num>first miss (DAA)</th></tr></thead><tbody>{rows_nodes}</tbody></table></div>
+<p class="muted small">Upgraded nodes run the new Rust node (sedra-rusty, release with merged mining); the old node runs the
+unchanged Go sedrad as a control. "Reports" is the version the node itself returns over RPC (the Rust node reports its
+rusty-kaspa base version). "Has the chain": the node has the newest reference chain block that is at least 100 DAA deep,
+on its selected chain. Upgraded nodes must always say yes; the old node says yes until the first merged-mined block and
+is expected to say no from then on.</p>
+<div class="scroll"><table><thead><tr><th>node</th><th>software</th><th>role</th><th>reachable</th><th>synced</th><th class=num>DAA</th><th class=num>peers</th><th>has the chain</th><th class=num>first miss (DAA)</th></tr></thead><tbody>{rows_nodes}</tbody></table></div>
 </section>
 
 <section class="panel"><h2>Recent blocks</h2>
@@ -791,11 +824,24 @@ def main():
     ap.add_argument("--seed", action="append", default=[], help="public seed address to list (repeatable)")
     ap.add_argument("--pool", default="", help="public stratum address of the testnet pool")
     ap.add_argument("--report-url", default="", help="link to the reports (for example issue #13)")
+    ap.add_argument("--software", action="append", default=[], metavar="NAME=TEXT",
+                    help="software label of a node, e.g. 'seed1=sedra-rusty 0.2.0-testnet.1 (Rust)' (repeatable)")
+    ap.add_argument("--about", action="append", default=[], metavar="NAME=TEXT",
+                    help="one-line role of a node, e.g. 'seed1=public seed, mines' (repeatable; no host names or IPs)")
     ap.add_argument("--criteria", default="", help="operator JSON for criteria 4-7 (see status_assets/criteria.example.json)")
     ap.add_argument("--publish", default="", help="rsync target, e.g. testnetlink@host:/ (a restricted key, see README)")
     for k, v in DEFAULTS.items():
         ap.add_argument("--" + k.replace("_", "-"), dest=k, default="", help=f"link (default {v})")
-    build(ap.parse_args())
+    a = ap.parse_args()
+    for k in ("software", "about"):
+        pairs = {}
+        for item in getattr(a, k):
+            name, sep, text = item.partition("=")
+            if not sep or not name.strip() or not text.strip():
+                ap.error(f"--{k} expects NAME=TEXT, got {item!r}")
+            pairs[name.strip()] = text.strip()
+        setattr(a, k, pairs)
+    build(a)
 
 
 if __name__ == "__main__":

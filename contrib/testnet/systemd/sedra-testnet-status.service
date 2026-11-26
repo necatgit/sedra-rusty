@@ -15,6 +15,9 @@ Environment="STATUS_PUSH_SOCKET=/var/lib/sedra-testnet-link/link.sock"
 Environment="RSYNC_RSH=ssh -S /var/lib/sedra-testnet-link/link.sock -o ControlMaster=no -o BatchMode=yes"
 ExecStart=/usr/bin/python3 /opt/sedra-testnet/status_page.py /var/lib/sedra-testnet-monitor --out /var/www/sedra-testnet \
   --activation 345600 --old old-go --seed <seed1>:22211 --seed <seed2>:22211 --pool stratum+tcp://<pool-host>:15555 \
+  --software "seed1=sedra-rusty 0.2.0-testnet.1 (Rust)" --software "seed2=sedra-rusty 0.2.0-testnet.1 (Rust)" \
+  --software "old-go=Go sedrad v2.0.0" --about "seed1=public seed, mines" --about "seed2=independent public seed" \
+  --about "old-go=unchanged control node" \
   --report-url https://github.com/necatgit/sedra-project/issues/13 --criteria /etc/sedra-testnet/criteria.json \
   --publish testnetlink@<vps>:/
 Nice=10

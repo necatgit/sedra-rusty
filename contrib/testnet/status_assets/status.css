@@ -255,6 +255,7 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .pill.bad { color: var(--bad); }
 .pill.wait { color: var(--muted); }
 .pill.run { color: var(--gold); }
+.node-about { color: var(--muted); font-size: 0.74rem; min-width: 14rem; max-width: 22rem; white-space: normal; margin-top: 0.15rem; }
 
 /* Join */
 .join-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; margin-top: 0.7rem; }
