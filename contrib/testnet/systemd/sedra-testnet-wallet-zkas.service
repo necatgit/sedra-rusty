@@ -1,0 +1,22 @@
+[Unit]
+Description=Testnet pool wallet daemon (private ZKas test chain, test keys only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sedratn
+Group=sedratn
+EnvironmentFile=/data/testnet/pool/secrets/pool.env
+ExecStart=/data/testnet/bin/zkas-walletd --network testnet --rpc-server 192.168.0.28:16820 --listen 127.0.0.1:8501 --wallet-dir /data/testnet/pool/wallets/zkas
+Restart=always
+RestartSec=30
+Nice=10
+MemoryMax=2G
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/testnet/pool/wallets/zkas /data/testnet/home
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

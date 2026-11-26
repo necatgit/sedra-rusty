@@ -180,12 +180,15 @@ the node with `--utxoindex` and point the wallet's `--rpcserver` at it; the wall
 
 ## Public testnet kit (#13, SIP-0003; branch `testnet-kit`, from `m10-auxpow` with `dev` merged in)
 
-Not launched: the launch waits for the Sedra team's agreement (SIP-0003 Q51, Q52). Guide, runbook and report template
+Not launched yet (2026-11-26). The Sedra team agreed on 2026-11-24 (SIP-0003 Q51; with a fresh chain Q52 is no longer
+a condition), the release `sedra-v0.2.0-testnet.1` (below) was published as a pre-release on 2026-11-25 after a
+rehearsal on the real hosts, and the start, Tue 2026-12-01, was announced by the Sedra team on 2026-11-26
+([sedra-project#13](https://github.com/necatgit/sedra-project/issues/13#issuecomment-7192048626)). Guide, runbook and report template
 are in the project repository under `testnet/`.
 
 - **Activation switch.** `--devnet-aux-pow-activation` is now `--aux-pow-activation-override=<DAA score>` (old name
   kept as an alias), allowed on devnet and testnet, refused on mainnet and simnet, with a warning on testnet. The
-  public testnet release will carry its score in `TESTNET_PARAMS.aux_pow_activation`; the override is for private
+  public testnet release carries its score in `TESTNET_PARAMS.aux_pow_activation` (345,600 in `0.2.0-testnet.1`, below); the override is for private
   dry runs. Test: `kaspad` `sedra_aux_pow_flag_tests`.
 - **Kaspa testnet-10 parents.** The testnet's parent network is Kaspa testnet-10 (SIP-0003 §4.1).
   `testing/integration/testdata/kaspa_tn10_*_v*.json.gz`: 20 consecutive chain blocks from api-tn10.kaspa.org

@@ -2,7 +2,9 @@
 
 Tools, configs and scripts for the public merged-mining testnet. The documents (participant guide, operator runbook,
 pass-report template, design) are in the project repository, `necatgit/sedra-project`, directory `testnet/`.
-**Not launched**: the launch waits for the Sedra team's agreement (SIP-0003 Q51, Q52).
+**Not launched yet** (2026-11-26): the Sedra team agreed on 2026-11-24 (SIP-0003 Q51); release `sedra-v0.2.0-testnet.1`
+published as a pre-release 2026-11-25; start Tue 2026-12-01, announced by the Sedra team on 2026-11-26
+([sedra-project#13](https://github.com/necatgit/sedra-project/issues/13#issuecomment-7192048626)).
 
 | Path | What |
 |---|---|
@@ -12,9 +14,9 @@ pass-report template, design) are in the project repository, `necatgit/sedra-pro
 | `summary.py` | the monitor's CSVs as the numbers of the pass report |
 | `status_page.py`, `status_assets/` | the public status page (SIP-0003 §4.4), in the puddlepool.com look with a TESTNET banner: static `index.html` + `status.json` from the monitor's CSVs (phase with countdowns to ban start and activation, DAA, difficulty, hashrate estimate, nodes and agreement, native vs merged-mined counts per day and per tag, SIP-0003 criteria 1/2/3/8 live and 4-7 from the operator's `--criteria` file, proposed criterion 9 (ZKas in the same coinbase) live for the shared parents, a ZKas section when the monitor runs with `--zkas`, join links, recent blocks). No payout scripts, no node errors. Works without JavaScript. Run every minute by `systemd/sedra-testnet-status.timer`; `--publish` pushes it to the web host. Tests: `python3 -m unittest discover -s contrib/testnet/tests` |
 | `faucet.sh` | sends testnet SDR from the faucet wallet (Go sedrawallet) to one `sedratest:` address |
-| `systemd/` | units for a testnet node, the old Go node (criterion 3), the monitor and the status page (with its SSH push connection), with `MemoryMax` |
+| `systemd/` | units for a testnet node, the old Go node (criterion 3), the monitor and the status page (with its SSH push connection), the Kaspa testnet-10 and private ZKas nodes, the pool (`sedra-testnet-pool`) and its three wallet daemons (`sedra-testnet-wallet-{kas,sdr,zkas}`, localhost only; secrets come from an `EnvironmentFile`, never from the unit), with `MemoryMax` |
 | `web/Caddyfile` | the web host for the status page (testnet.puddlepool.com on the VPS): static files, automatic Let's Encrypt, no client IPs in the log |
-| `pool/miningcore-testnet.json` | Miningcore (branch `sedra-merged-mining`): Kaspa testnet-10 parent, Sedra testnet aux chain. `genesisHash` must be the testnet genesis |
+| `pool/miningcore-testnet.json` | Miningcore (branch `sedra-merged-mining`): Kaspa testnet-10 parent, ZKas test chain and Sedra testnet as aux chains. Each `genesisHash` must be that chain's testnet genesis; the ZKas pool address must be shielded (`zkastest:p...`); `rewardCrossCheckUrl` is `off` on the parent and on the Sedra aux pool, which is written out for that reason |
 | `dryrun/` | a private dry run of the whole kit on one host (loopback, own ports and data dir, activation override) |
 
 The testnet release carries its activation score in `TESTNET_PARAMS` (0.2.0-testnet.1: 345,600; ban start

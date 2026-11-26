@@ -1,0 +1,25 @@
+# SEDRA (#13, D11): PRIVATE ZKas test chain for the Sedra testnet pool only (zkas-rusty zkas-v1.0.14-1-g312c6fb7,
+# built from source). --testnet --netsuffix=10 = ZKas testnet rules (merged mining and ZKM1 from genesis), but never
+# connected to a public ZKas network: no DNS seeding, no outbound peers, P2P on localhost only. gRPC 16820 for VM 204.
+[Unit]
+Description=Private ZKas test chain for the Sedra testnet pool (zkasd zkas-v1.0.14)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=zkastn
+ExecStart=/opt/zkas-testnet/zkasd --testnet --netsuffix=10 --appdir=/var/lib/zkas-testnet --utxoindex \
+  --nodnsseed --disable-upnp --outpeers=0 --listen=127.0.0.1:16821 --rpclisten=0.0.0.0:16820 \
+  --enable-unsynced-mining --ram-scale=0.3 --yes
+Restart=on-failure
+RestartSec=15
+MemoryMax=3G
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/zkas-testnet
+
+[Install]
+WantedBy=multi-user.target

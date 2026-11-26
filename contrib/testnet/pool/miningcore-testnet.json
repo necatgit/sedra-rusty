@@ -1,5 +1,5 @@
 {
-  "_comment": "SEDRA (#13): Miningcore (branch sedra-merged-mining) for the public testnet: Kaspa testnet-10 as the parent, the Sedra testnet as the merged-mined chain. A separate instance with its own database; never the production pool's host, database or wallets. UPPERCASE values are placeholders. genesisHash MUST be the Sedra testnet genesis: without it Miningcore commits to the mainnet genesis and every Sedra block is rejected (WrongCommitment).",
+  "_comment": "SEDRA (#13): Miningcore (branch sedra-merged-mining) for the public testnet: Kaspa testnet-10 as the parent, the Sedra testnet as the merged-mined chain. A separate instance with its own database; never the production pool's host, database or wallets. UPPERCASE values are placeholders. genesisHash MUST be the Sedra testnet genesis: without it Miningcore commits to the mainnet genesis and every Sedra block is rejected (WrongCommitment). ZKas (D11, 2026-11-25): a private ZKas test chain is merged next to Sedra; its genesisHash MUST be the ZKas testnet genesis (Miningcore defaults to ZKas mainnet), and its pool address MUST be a shielded zkastest:p... address (ZKas testnet rejects a coinbase paying a transparent address); zkas-walletd runs on the pool host (127.0.0.1:8501) and walletPassword is its X-Wallet-Token. rewardCrossCheckUrl 'off': Miningcore otherwise cross-checks rewards against the mainnet explorers, and the synthesized Sedra aux pool does not inherit it, so that pool is written out as its own entry. Coinbase budget: Kaspa allows 204 payload bytes; ZKM1 (68) + SDM1 (47) + Miningcore's '2.1.0.' prefix leave about 24 bytes for extra.extraData, so keep it short. Miners give a ZKas test address in the user name (kaspatest:...+zkastest:...); a zkastest: address in the password is ignored by Miningcore today. Hosts as installed 2026-11-25: the pool on VM 204, the Kaspa testnet-10 node and the ZKas test node on VM 206 (192.168.0.28).",
   "logging": {
     "level": "info",
     "enableConsoleLog": true,
@@ -8,7 +8,11 @@
     "logBaseDirectory": "logs",
     "perPoolLogFile": false
   },
-  "banning": { "manager": "Integrated", "banOnJunkReceive": true, "banOnInvalidShares": false },
+  "banning": {
+    "manager": "Integrated",
+    "banOnJunkReceive": true,
+    "banOnInvalidShares": false
+  },
   "persistence": {
     "postgres": {
       "host": "127.0.0.1",
@@ -18,8 +22,16 @@
       "database": "miningcore_testnet"
     }
   },
-  "paymentProcessing": { "enabled": true, "interval": 600, "shareRecoveryFile": "recovered-shares-testnet.txt" },
-  "api": { "enabled": true, "listenAddress": "127.0.0.1", "port": 4100 },
+  "paymentProcessing": {
+    "enabled": true,
+    "interval": 600,
+    "shareRecoveryFile": "recovered-shares-testnet.txt"
+  },
+  "api": {
+    "enabled": true,
+    "listenAddress": "127.0.0.1",
+    "port": 4100
+  },
   "clusterName": "sedra-testnet",
   "pools": [
     {
@@ -30,31 +42,70 @@
       "blockRefreshInterval": 500,
       "jobRebroadcastTimeout": 10,
       "clientConnectionTimeout": 600,
-      "banning": { "enabled": true, "time": 600, "invalidPercent": 50, "checkThreshold": 50 },
+      "banning": {
+        "enabled": true,
+        "time": 600,
+        "invalidPercent": 50,
+        "checkThreshold": 50
+      },
       "ports": {
         "15555": {
           "name": "testnet vardiff",
           "listenAddress": "0.0.0.0",
           "difficulty": 1,
-          "varDiff": { "minDiff": 0.01, "maxDiff": null, "targetTime": 15, "retargetTime": 90, "variancePercent": 30 }
+          "varDiff": {
+            "minDiff": 0.01,
+            "maxDiff": null,
+            "targetTime": 15,
+            "retargetTime": 90,
+            "variancePercent": 30
+          }
         }
       },
       "daemons": [
-        { "host": "127.0.0.1", "port": 16210, "http2": true },
-        { "host": "127.0.0.1", "port": 8082, "http2": true, "category": "wallet" }
+        {
+          "host": "192.168.0.28",
+          "port": 16210,
+          "http2": true
+        },
+        {
+          "host": "127.0.0.1",
+          "port": 8082,
+          "http2": true,
+          "category": "wallet"
+        }
       ],
       "paymentProcessing": {
         "enabled": true,
         "minimumPayment": 10,
         "payoutScheme": "PPLNS",
-        "payoutSchemeConfig": { "factor": 2.0 },
-        "extra": { "walletPassword": "KASPA_TN10_WALLET_PASSWORD" }
+        "payoutSchemeConfig": {
+          "factor": 2.0
+        },
+        "extra": {
+          "walletPassword": "KASPA_TN10_WALLET_PASSWORD"
+        }
       },
       "extra": {
         "maxActiveJobs": 64,
         "extraData": "sedra-testnet",
         "extraNonce1Size": 2,
         "additionalMergedMining": [
+          {
+            "enabled": true,
+            "coin": "zkas",
+            "genesisHash": "d5d97eecaa0bad6a4a05627bcb4d99aa22f1632458e18a7b2b30e2fd5b4c2f9b",
+            "host": "192.168.0.28",
+            "port": 16820,
+            "address": "zkastest:POOL_ZKAS_TEST_SHIELDED_ADDRESS",
+            "extraData": "zkas-testnet-pool",
+            "walletHost": "127.0.0.1",
+            "walletPort": 8501,
+            "walletPassword": "ZKAS_WALLET_TOKEN",
+            "minimumPayment": 100,
+            "minimumConfirmations": 110,
+            "payoutScheme": "PPLNS"
+          },
           {
             "enabled": true,
             "coin": "sedra",
@@ -71,7 +122,47 @@
             "minimumConfirmations": 110,
             "payoutScheme": "PPLNS"
           }
-        ]
+        ],
+        "rewardCrossCheckUrl": "off"
+      }
+    },
+    {
+      "id": "kas-tn10-sdr-testnet-sedra",
+      "coin": "sedra",
+      "enabled": true,
+      "enableInternalStratum": false,
+      "address": "sedratest:POOL_SEDRA_TESTNET_ADDRESS",
+      "ports": {},
+      "daemons": [
+        {
+          "host": "127.0.0.1",
+          "port": 22210,
+          "http2": true
+        },
+        {
+          "host": "127.0.0.1",
+          "port": 8182,
+          "http2": true,
+          "category": "wallet"
+        }
+      ],
+      "paymentProcessing": {
+        "enabled": true,
+        "minimumPayment": 10,
+        "payoutScheme": "PPLNS",
+        "payoutSchemeConfig": {
+          "factor": 2.0
+        },
+        "extra": {
+          "walletPassword": "SEDRA_TESTNET_WALLET_PASSWORD",
+          "minimumConfirmations": 110
+        }
+      },
+      "extra": {
+        "parentPoolId": "kas-tn10-sdr-testnet",
+        "protobufWalletRpcServiceName": "sedrawalletd.sedrawalletd",
+        "protobufDaemonRpcServiceName": "protowire.RPC",
+        "rewardCrossCheckUrl": "off"
       }
     }
   ]

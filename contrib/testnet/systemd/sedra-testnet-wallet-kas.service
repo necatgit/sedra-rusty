@@ -1,0 +1,22 @@
+[Unit]
+Description=Testnet pool wallet daemon (Kaspa testnet-10, test keys only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=sedratn
+Group=sedratn
+EnvironmentFile=/data/testnet/pool/secrets/pool.env
+ExecStart=/data/testnet/bin/kaspawallet start-daemon --testnet -f /data/testnet/pool/wallets/kas-keys.json -p ${KAS_WALLET_PW} -s 192.168.0.28:16210 -l 127.0.0.1:8082
+Restart=always
+RestartSec=30
+Nice=10
+MemoryMax=512M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/testnet/pool/wallets /data/testnet/home
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
