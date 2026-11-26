@@ -1,5 +1,7 @@
 // SEDRA (#13): optional extras for the testnet status page. The page works without this script; it only makes the
-// countdowns tick, warns when the data has stopped updating, and offers a light/dark switch.
+// countdowns tick, shows the chain start in the visitor's local time, warns when the data has stopped updating, and
+// offers a light/dark switch. Estimated countdowns stop when the data is old, so a stalled monitor shows no false
+// countdown; the start countdown is a fixed time and keeps ticking.
 (function () {
   "use strict";
 
@@ -18,11 +20,28 @@
     return Number(el.getAttribute("data-eta")) > 0;
   });
 
+  Array.prototype.forEach.call(document.querySelectorAll(".local-time[data-unix]"), function (el) {
+    var d = new Date(Number(el.getAttribute("data-unix")) * 1000);
+    try {
+      el.textContent = "your time " + d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    } catch (e) {
+      el.textContent = "your time " + d.toLocaleString();
+    }
+    el.hidden = false;
+  });
+
   function tick() {
     var now = Date.now() / 1000;
+    var old = !dataTime || now - dataTime > 600;
     countdowns.forEach(function (el) {
       var left = Number(el.getAttribute("data-eta")) - now;
-      el.textContent = left > 0 ? "in about " + span(left) : "any moment now";
+      if (el.getAttribute("data-kind") === "fixed") {
+        el.textContent = left > 0 ? "in " + span(left) : "any moment now";
+      } else if (old) {
+        el.textContent = "estimate paused";
+      } else {
+        el.textContent = left > 0 ? "~" + span(left) : "any moment now";
+      }
     });
     // the page is rebuilt every minute; if the visitor's copy or the data behind it is old, say so
     if (stale && dataTime && now - dataTime > 300) {

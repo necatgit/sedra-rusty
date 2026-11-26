@@ -218,6 +218,9 @@ main { max-width: 1160px; margin: 0 auto; padding: 1.5rem 16px 2rem; }
 .big.good { color: var(--good); }
 .big.bad { color: var(--bad); }
 .countdown .big { color: var(--cyan); }
+.countdown.launch { margin-bottom: 1.25rem; border-color: var(--gold); }
+.countdown.launch .big { color: var(--gold); }
+.local-time::before { content: " · "; }
 .countdown.done .big { color: var(--good); }
 .bar { background: var(--bar); border-radius: 999px; height: 7px; margin: 0.55rem 0 0.4rem; overflow: hidden; }
 .bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--cyan), var(--violet)); }

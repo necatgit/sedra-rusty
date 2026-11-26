@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +104,65 @@ class StatusPageTest(unittest.TestCase):
         self.assertIn("no, as expected", nodes_html)
         self.assertIn("Stopped following at the first merged-mined block, as predicted (criterion 3)", nodes_html)
         self.assertNotIn("pill bad", nodes_html)
+
+    def flat_nodes(self, daa, minutes=70):
+        """nodes.csv for a chain that stays at `daa` (not started at 0, stalled otherwise) for `minutes`."""
+        os.makedirs(self.mon, exist_ok=True)
+        t = int(time.time())
+        with open(os.path.join(self.mon, "nodes.csv"), "w") as f:
+            f.write(fixtures.HDR["nodes.csv"] + "\n")
+            for i in range(minutes, -1, -10):
+                for node in ("seed1", "seed2", "old-go"):
+                    f.write(f"{t - 60 * i},{node},ok,sedra-testnet-10,{daa},,,1,0,2,1.0.1,\n")
+        return t
+
+    def test_countdown_before_the_start(self):
+        t = self.flat_nodes(0)
+        start = t + 3 * 3600
+        s, page = run_page(self.mon, self.www, "--start-time",
+                           time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)))
+        self.assertEqual(s["chain_start"], {"unix": start, "started": False})
+        self.assertIn("Not started yet", s["phase"])
+        self.assertIn(f'data-eta="{start}" data-kind="fixed" id="cd-start"', page)
+        self.assertIn(f'class="local-time" data-unix="{start}" hidden', page)
+        # ban start and activation: the plan at one DAA per second from the announced start, not a rate estimate
+        self.assertEqual(s["ban_start_eta"], {"reached": False, "unix": start + 172_800, "basis": "plan"})
+        self.assertEqual(s["activation_eta"], {"reached": False, "unix": start + 345_600, "basis": "plan"})
+        self.assertIn("planned about", page)
+        self.assertNotIn("estimated from the current block rate", page)
+        # start time passed but no block yet: no countdown that runs below zero
+        s, page = run_page(self.mon, self.www, "--start-time", "2026-01-01T10:00:00Z")
+        self.assertIn('data-eta="" data-kind="fixed" id="cd-start">any moment now', page)
+
+    def test_countdown_estimate_and_stall(self):
+        fixtures.make(self.mon, "native", step=50)
+        s, page = run_page(self.mon, self.www, "--start-time", "2026-01-01T10:00:00Z")
+        self.assertEqual(s["activation_eta"]["basis"], "rate")
+        self.assertNotIn('id="cd-start"', page)  # started: no start card
+        self.assertIn("estimated from the current block rate", page)
+        self.assertRegex(page, r'id="cd-act">~\d')
+        # the DAA score stops advancing: no countdown at all
+        self.flat_nodes(5000)
+        s, page = run_page(self.mon, self.www)
+        self.assertEqual(s["activation_eta"], {"reached": False, "unix": None, "basis": "stalled"})
+        self.assertIn('data-eta="" data-kind="estimate" id="cd-act">paused', page)
+        self.assertIn("has not advanced in the last hour", page)
+
+    def test_countdown_after_activation(self):
+        info = fixtures.make(self.mon, "merged", step=50)
+        s, page = run_page(self.mon, self.www, "--start-time", "2026-01-01T10:00:00Z")
+        self.assertTrue(s["activation_eta"]["reached"])
+        self.assertIn('id="cd-act">active', page)
+        self.assertIn(f"merged mining active since block {s['first_merged_block']['hash'][:16]}… "
+                      f"(DAA {info['first_merged']:,}", page)
+
+    def test_bad_start_time_is_rejected(self):
+        fixtures.make(self.mon, "native", step=200)
+        for bad in ("tomorrow", "2026-11-27T10:00:00"):
+            r = subprocess.run([sys.executable, PAGE, self.mon, "--out", self.www, "--start-time", bad],
+                               capture_output=True)
+            self.assertNotEqual(r.returncode, 0, bad)
+            self.assertIn(b"--start-time", r.stderr)
 
     def test_bad_node_label_is_rejected(self):
         fixtures.make(self.mon, "native", step=200)

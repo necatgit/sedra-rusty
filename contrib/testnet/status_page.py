@@ -10,10 +10,13 @@ the page can be built next to the monitor and copied to a public web host (`--pu
 Usage:
   python3 status_page.py MONITOR_DIR --out WWW_DIR [--activation 345600] [--finality 86400]
          [--old old-go] [--seed host:22211 ...] [--pool stratum+tcp://host:15555] [--report-url URL]
-         [--software NAME=TEXT ...] [--about NAME=TEXT ...]
+         [--software NAME=TEXT ...] [--about NAME=TEXT ...] [--start-time 2026-11-27T10:00:00Z]
          [--criteria criteria.json] [--publish user@host:/var/www/testnet/]
 
-Shown: a TEST NETWORK banner; the phase with live countdowns to the ban start and the activation; tip DAA score, DAA
+Shown: a TEST NETWORK banner; the phase; before the first block a countdown to the announced start (`--start-time`,
+a fixed time, also in the visitor's local time); countdowns to the ban start and the activation, estimated from the
+DAA score and the block rate of the last hour (before the start: the plan at one DAA per second; no estimate while the
+chain does not advance, and the script stops ticking when the monitor data is old); tip DAA score, DAA
 rate, difficulty and hashrate estimate; every node with its software (the operator's `--software` label, else Rust
 sedra-rusty for upgraded and Go sedrad for `--old` nodes, plus the version the node reports over RPC), a one-line
 role (`--about`), its state and whether it still has the reference chain;
@@ -42,6 +45,7 @@ STATE = ".status-state.json"
 ASSETS = "status_assets"
 RECENT = 30
 STALE_SECONDS = 300
+NOMINAL_DAA_PER_SECOND = 1  # testnet target: one block per second
 TWO_WEEKS = 14 * 86400
 GITHUB = "https://github.com/necatgit"
 DEFAULTS = {
@@ -390,7 +394,10 @@ def build(a):
     tags24 = Counter(tag(b["extra_data"]) or "(none)" for b in last24_rows)
     recent_list = sorted(recent, key=lambda b: (int(b["daa_score"]), b["hash"]), reverse=True)[:RECENT]
 
-    if daa >= a.activation:
+    started = daa > 0
+    if not started:
+        phase, phase_key = "Not started yet · waiting for the first block", "native"
+    elif daa >= a.activation:
         phase, phase_key = "Merged mining active", "merged"
     elif daa >= ban_start:
         phase, phase_key = "Native phase · self-parent ban active", "ban"
@@ -398,11 +405,17 @@ def build(a):
         phase, phase_key = "Native phase", "native"
 
     def eta(target):
-        if daa >= target:
-            return {"reached": True, "unix": st["reached"].get("ban" if target == ban_start else "activation")}
-        if not rate or rate <= 0:
-            return {"reached": False, "unix": None}
-        return {"reached": False, "unix": int(t_now + (target - daa) / rate)}
+        """When the chain reaches `target`. basis: "rate" (estimate from the last hour), "plan" (not started: the
+        announced start at the nominal rate), "stalled" (the DAA score did not advance) or "unknown" (no rate yet)."""
+        if started and daa >= target:
+            return {"reached": True, "unix": st["reached"].get("ban" if target == ban_start else "activation"),
+                    "basis": "reached"}
+        if started and rate and rate > 0:
+            return {"reached": False, "unix": int(t_now + (target - daa) / rate), "basis": "rate"}
+        if not started and a.start_unix:
+            return {"reached": False, "unix": int(max(a.start_unix, t_now) + target / NOMINAL_DAA_PER_SECOND),
+                    "basis": "plan"}
+        return {"reached": False, "unix": None, "basis": "stalled" if started and rate is not None else "unknown"}
 
     nodes = []
     for n in order:
@@ -458,6 +471,7 @@ def build(a):
         "phase": phase,
         "ban_start": ban_start,
         "activation": a.activation,
+        "chain_start": {"unix": a.start_unix, "started": started},
         "ban_start_eta": eta(ban_start),
         "activation_eta": eta(a.activation),
         "blocks_all_time": st["kinds"],
@@ -611,20 +625,45 @@ def render(s, a, phase_key, hash_series, ver):
 
     def countdown(label, target, info, key):
         pct = min(100.0, 100.0 * s["virtual_daa_score"] / target) if target else 100.0
-        if info["reached"]:
-            when = f"reached {utc(info['unix'])}" if info["unix"] else "reached"
-            left, cls = "reached", "done"
-        elif info["unix"]:
-            when = f"about {utc(info['unix'])}"
-            left, cls = f"in about {span(info['unix'] - s['generated'])}", ""
-        else:
-            when, left, cls = "date unknown until the block rate is measured", "-", ""
-        unix = info["unix"] if info["unix"] and not info["reached"] else ""
+        basis = info.get("basis", "rate" if info["unix"] else "unknown")
         remaining = max(0, target - s["virtual_daa_score"])
+        where = f"DAA {target:,} · {remaining:,} to go"
+        unix, cls = "", ""
+        if info["reached"]:
+            left, cls = "active", "done"
+            first = s["first_merged_block"]
+            if key == "act" and first:
+                note = (f"merged mining active since block {first['hash'][:16]}… (DAA {first['daa_score']:,}, "
+                        f"{utc(first['unix_time'])})")
+            else:
+                note = f"reached{' ' + utc(info['unix']) if info['unix'] else ''}"
+            where = f"DAA {target:,}"
+        elif basis == "rate":
+            unix, left = info["unix"], f"~{span(info['unix'] - s['generated'])}"
+            note = (f"about {utc(info['unix'])}, estimated from the current block rate "
+                    f"({s['daa_per_second_last_hour']:.2f} DAA/s)")
+        elif basis == "plan":
+            unix, left = info["unix"], f"~{span(info['unix'] - s['generated'])}"
+            note = f"planned about {utc(info['unix'])} (one block per second from the start)"
+        elif basis == "stalled":
+            left, note = "paused", "no estimate: the DAA score has not advanced in the last hour"
+        else:
+            left, note = "-", "estimated once the block rate is measured"
         return (f'<div class="card countdown {cls}"><div class="card-label">{label}</div>'
-                f'<div class="big" data-eta="{unix}" id="cd-{key}">{e(left)}</div>'
+                f'<div class="big" data-eta="{unix}" data-kind="estimate" id="cd-{key}">{e(left)}</div>'
                 f'<div class="bar"><i style="width:{pct:.1f}%"></i></div>'
-                f'<div class="muted small">DAA {target:,} · {remaining:,} to go · {e(when)}</div></div>')
+                f'<div class="muted small">{where} · {e(note)}</div></div>')
+
+    def start_card():
+        cs = s["chain_start"]
+        if cs["started"] or not cs["unix"]:
+            return ""
+        due = cs["unix"] > s["generated"]
+        left = f"in {span(cs['unix'] - s['generated'])}" if due else "any moment now"
+        return (f'<section class="card countdown launch"><div class="card-label">Chain starts (genesis, first blocks)</div>'
+                f'<div class="big" data-eta="{cs["unix"] if due else ""}" data-kind="fixed" id="cd-start">{e(left)}</div>'
+                f'<div class="muted small">{utc(cs["unix"])}<span class="local-time" data-unix="{cs["unix"]}" hidden></span>'
+                f' · a fixed time; the countdowns below are planned at one block per second until blocks come</div></section>')
 
     def chain_cell(n):
         if n["role"] == "reference":
@@ -755,6 +794,7 @@ with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-
 <div class="card"><div class="card-label">Hashrate estimate</div><div class="big">{si(s['hashes_per_second'], 'H/s')}</div><div class="muted small">native + merged, last 1,000 blocks</div></div>
 <div class="card"><div class="card-label">Nodes up</div><div class="big">{ok_nodes} / {len(s['nodes'])}</div><div class="muted small">peers per node: {', '.join(map(str, peers)) or '-'}</div></div>
 </section>
+{start_card()}
 <section class="grid2">
 {countdown("Self-parent ban starts", s['ban_start'], s['ban_start_eta'], "ban")}
 {countdown("Merged mining activates", s['activation'], s['activation_eta'], "act")}
@@ -828,6 +868,8 @@ def main():
                     help="software label of a node, e.g. 'seed1=sedra-rusty 0.2.0-testnet.1 (Rust)' (repeatable)")
     ap.add_argument("--about", action="append", default=[], metavar="NAME=TEXT",
                     help="one-line role of a node, e.g. 'seed1=public seed, mines' (repeatable; no host names or IPs)")
+    ap.add_argument("--start-time", default="", help="announced chain start in UTC, e.g. 2026-11-27T10:00:00Z: a "
+                    "countdown to it until the first block")
     ap.add_argument("--criteria", default="", help="operator JSON for criteria 4-7 (see status_assets/criteria.example.json)")
     ap.add_argument("--publish", default="", help="rsync target, e.g. testnetlink@host:/ (a restricted key, see README)")
     for k, v in DEFAULTS.items():
@@ -841,6 +883,15 @@ def main():
                 ap.error(f"--{k} expects NAME=TEXT, got {item!r}")
             pairs[name.strip()] = text.strip()
         setattr(a, k, pairs)
+    a.start_unix = None
+    if a.start_time:
+        try:
+            t = dt.datetime.fromisoformat(a.start_time.replace("Z", "+00:00"))
+        except ValueError:
+            ap.error(f"--start-time expects an ISO time such as 2026-11-27T10:00:00Z, got {a.start_time!r}")
+        if t.tzinfo is None:
+            ap.error("--start-time needs a time zone (Z for UTC)")
+        a.start_unix = int(t.timestamp())
     build(a)
 
 
