@@ -3,8 +3,9 @@
 # the public web host (the VPS, testnet.puddlepool.com) with a key that the VPS restricts to its web directory
 # (README.md, "Status page"). Without --publish, any static web server on this host can serve /var/www/sedra-testnet.
 # Fill in the seed addresses, the pool and the VPS at launch. Needs Python 3.12 or newer, and rsync for --publish.
-# 2026-11-27, public testnet: give only public seeds (seed2); seed1 and the pool run on the operator's home network
-# and are not published, so leave their --seed/--pool out until there is public access that does not expose it.
+# 2026-11-27, public testnet (corrected the same day; an earlier note said seed2 only): --seed puddlepool.com:22211
+# --seed 62.83.121.25:22211 --pool stratum+tcp://puddlepool.com:15555. seed1 and the pool only by the name
+# puddlepool.com, never by IP or another host name.
 [Unit]
 Description=Sedra public testnet status page
 After=sedra-testnet-monitor.service sedra-testnet-link.service
@@ -16,9 +17,9 @@ User=sedra
 Environment="STATUS_PUSH_SOCKET=/var/lib/sedra-testnet-link/link.sock"
 Environment="RSYNC_RSH=ssh -S /var/lib/sedra-testnet-link/link.sock -o ControlMaster=no -o BatchMode=yes"
 ExecStart=/usr/bin/python3 /opt/sedra-testnet/status_page.py /var/lib/sedra-testnet-monitor --out /var/www/sedra-testnet \
-  --activation 345600 --old old-go --seed <seed2>:22211 \
+  --activation 345600 --old old-go --seed <seed1>:22211 --seed <seed2>:22211 --pool stratum+tcp://<pool-host>:15555 \
   --software "seed1=sedra-rusty 0.2.0-testnet.1 (Rust)" --software "seed2=sedra-rusty 0.2.0-testnet.1 (Rust)" \
-  --software "old-go=Go sedrad v2.0.0" --about "seed1=mines; not a public seed" --about "seed2=independent public seed" \
+  --software "old-go=Go sedrad v2.0.0" --about "seed1=public seed, mines" --about "seed2=independent public seed" \
   --about "old-go=unchanged control node" --start-time 2026-11-27T10:00:00Z \
   --report-url https://github.com/necatgit/sedra-project/issues/13 --criteria /etc/sedra-testnet/criteria.json \
   --publish testnetlink@<vps>:/
