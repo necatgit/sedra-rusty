@@ -1,8 +1,9 @@
 # SEDRA (#13): rebuilds the public status page (contrib/testnet/status_page.py) from the monitor's CSV files.
 # Called every minute by sedra-testnet-status.timer. The web server (any static server) serves /var/www/sedra-testnet;
 # it needs no access to a node. Fill in the seed addresses and the pool at launch.
-# 2026-11-27, public testnet: give only public seeds (seed2); seed1 and the pool run on the operator's home network
-# and are not published, so leave their --seed/--pool out until there is public access that does not expose it.
+# 2026-11-27, public testnet (corrected the same day; an earlier note said seed2 only): --seed puddlepool.com:22211
+# --seed 62.83.121.25:22211 --pool stratum+tcp://puddlepool.com:15555. seed1 and the pool only by the name
+# puddlepool.com, never by IP or another host name.
 [Unit]
 Description=Sedra public testnet status page
 After=sedra-testnet-monitor.service
