@@ -3,6 +3,8 @@
 # the public web host (the VPS, testnet.puddlepool.com) with a key that the VPS restricts to its web directory
 # (README.md, "Status page"). Without --publish, any static web server on this host can serve /var/www/sedra-testnet.
 # Fill in the seed addresses, the pool and the VPS at launch. Needs Python 3.12 or newer, and rsync for --publish.
+# 2026-11-27, public testnet: give only public seeds (seed2); seed1 and the pool run on the operator's home network
+# and are not published, so leave their --seed/--pool out until there is public access that does not expose it.
 [Unit]
 Description=Sedra public testnet status page
 After=sedra-testnet-monitor.service sedra-testnet-link.service
