@@ -1,6 +1,8 @@
 # SEDRA (#13): rebuilds the public status page (contrib/testnet/status_page.py) from the monitor's CSV files.
 # Called every minute by sedra-testnet-status.timer. The web server (any static server) serves /var/www/sedra-testnet;
 # it needs no access to a node. Fill in the seed addresses and the pool at launch.
+# 2026-11-27, public testnet: give only public seeds (seed2); seed1 and the pool run on the operator's home network
+# and are not published, so leave their --seed/--pool out until there is public access that does not expose it.
 [Unit]
 Description=Sedra public testnet status page
 After=sedra-testnet-monitor.service
