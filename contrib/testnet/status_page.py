@@ -15,7 +15,8 @@ Usage:
 
 Shown: a TEST NETWORK banner; the phase; before the first block a countdown to the announced start (`--start-time`,
 a fixed time, also in the visitor's local time); countdowns to the ban start and the activation, estimated from the
-DAA score and the block rate of the last hour (before the start: the plan at one DAA per second; no estimate while the
+DAA score and the block rate of the last 30 minutes of blocks (before the start, and in the first ten minutes after
+it, the plan at one DAA per second; no estimate while the
 chain does not advance, and the script stops ticking when the monitor data is old); tip DAA score, DAA
 rate, difficulty and hashrate estimate; every node with its software (the operator's `--software` label, else Rust
 sedra-rusty for upgraded and Go sedrad for `--old` nodes, plus the version the node reports over RPC), a one-line
@@ -45,6 +46,8 @@ STATE = ".status-state.json"
 ASSETS = "status_assets"
 RECENT = 30
 STALE_SECONDS = 300
+RATE_WINDOW = 1800  # seconds of blocks the DAA rate is measured over: recent enough not to carry the start-up burst
+RATE_MIN_SPAN = 600  # a rate needs at least this much of the window, otherwise the ETA stays on the plan
 NOMINAL_DAA_PER_SECOND = 1  # testnet target: one block per second
 TWO_WEEKS = 14 * 86400
 GITHUB = "https://github.com/necatgit"
@@ -357,7 +360,8 @@ def build(a):
     count_shared(os.path.join(a.monitor_dir, "shared_parents.csv"), st)
     t_now = now()
 
-    # nodes: the newest row per node, plus the DAA rate of the reference node over the last hour
+    # nodes: the newest row per node, plus the DAA rate of the reference node over the last RATE_WINDOW seconds with
+    # blocks (rows at DAA 0, before the first block, do not count)
     node_rows = tail_rows(os.path.join(a.monitor_dir, "nodes.csv"))
     latest, order = {}, []
     for r in node_rows:
@@ -368,10 +372,11 @@ def build(a):
     ref_ok = [r for r in node_rows if r["node"] == ref and r["status"] == "ok"]
     daa = int(ref_ok[-1]["virtual_daa_score"]) if ref_ok else 0
     rate = None
-    hour = [r for r in ref_ok if int(r["unix_time"]) >= int(ref_ok[-1]["unix_time"]) - 3600] if ref_ok else []
-    if len(hour) >= 2 and int(hour[-1]["unix_time"]) > int(hour[0]["unix_time"]):
-        rate = (int(hour[-1]["virtual_daa_score"]) - int(hour[0]["virtual_daa_score"])) / (
-            int(hour[-1]["unix_time"]) - int(hour[0]["unix_time"]))
+    win = [r for r in ref_ok if int(r["virtual_daa_score"] or 0) > 0
+           and int(r["unix_time"]) >= int(ref_ok[-1]["unix_time"]) - RATE_WINDOW] if ref_ok else []
+    if len(win) >= 2 and int(win[-1]["unix_time"]) - int(win[0]["unix_time"]) >= RATE_MIN_SPAN:
+        rate = (int(win[-1]["virtual_daa_score"]) - int(win[0]["virtual_daa_score"])) / (
+            int(win[-1]["unix_time"]) - int(win[0]["unix_time"]))
     data_time = max((int(r["unix_time"]) for r in node_rows), default=0)
 
     # network: difficulty and hashrate estimate of the reference node (monitor's network.csv, may be absent)
@@ -405,16 +410,16 @@ def build(a):
         phase, phase_key = "Native phase", "native"
 
     def eta(target):
-        """When the chain reaches `target`. basis: "rate" (estimate from the last hour), "plan" (not started: the
-        announced start at the nominal rate), "stalled" (the DAA score did not advance) or "unknown" (no rate yet)."""
+        """When the chain reaches `target`. basis: "rate" (estimate from the recent block rate), "plan" (no rate yet:
+        the announced start at the nominal rate), "stalled" (the DAA score did not advance) or "unknown" (neither)."""
         if started and daa >= target:
             return {"reached": True, "unix": st["reached"].get("ban" if target == ban_start else "activation"),
                     "basis": "reached"}
         if started and rate and rate > 0:
             return {"reached": False, "unix": int(t_now + (target - daa) / rate), "basis": "rate"}
-        if not started and a.start_unix:
-            return {"reached": False, "unix": int(max(a.start_unix, t_now) + target / NOMINAL_DAA_PER_SECOND),
-                    "basis": "plan"}
+        if rate is None and a.start_unix:
+            start = a.start_unix if started else max(a.start_unix, t_now)
+            return {"reached": False, "unix": int(start + target / NOMINAL_DAA_PER_SECOND), "basis": "plan"}
         return {"reached": False, "unix": None, "basis": "stalled" if started and rate is not None else "unknown"}
 
     nodes = []
@@ -465,7 +470,8 @@ def build(a):
         "data_time": data_time,
         "stale": t_now - data_time > STALE_SECONDS,
         "virtual_daa_score": daa,
-        "daa_per_second_last_hour": rate,
+        "daa_per_second": rate,
+        "rate_window_seconds": RATE_WINDOW,
         "difficulty": float(net["difficulty"]) if net and net.get("difficulty") else None,
         "hashes_per_second": float(net["hashes_per_second"]) if net and net.get("hashes_per_second") else None,
         "phase": phase,
@@ -641,12 +647,12 @@ def render(s, a, phase_key, hash_series, ver):
         elif basis == "rate":
             unix, left = info["unix"], f"~{span(info['unix'] - s['generated'])}"
             note = (f"about {utc(info['unix'])}, estimated from the current block rate "
-                    f"({s['daa_per_second_last_hour']:.2f} DAA/s)")
+                    f"({s['daa_per_second']:.2f} DAA/s over the last 30 min)")
         elif basis == "plan":
             unix, left = info["unix"], f"~{span(info['unix'] - s['generated'])}"
             note = f"planned about {utc(info['unix'])} (one block per second from the start)"
         elif basis == "stalled":
-            left, note = "paused", "no estimate: the DAA score has not advanced in the last hour"
+            left, note = "paused", "no estimate: the DAA score has not advanced in the last 30 minutes"
         else:
             left, note = "-", "estimated once the block rate is measured"
         return (f'<div class="card countdown {cls}"><div class="card-label">{label}</div>'
@@ -722,9 +728,9 @@ def render(s, a, phase_key, hash_series, ver):
     late_sdm1 = len(s["sdm1_blocks_after_ban_start"])
     stale = ('<div class="alert" id="stale">The monitor data is older than five minutes: this page may be out of date.</div>'
              if s["stale"] else '<div class="alert" id="stale" hidden></div>')
-    rate = f"{s['daa_per_second_last_hour']:.2f}" if s["daa_per_second_last_hour"] else "-"
-    seeds = "".join(f"<li><code>{e(x)}</code></li>" for x in s["seeds"]) or "<li class=muted>announced at launch</li>"
-    pool = f"<code>{e(s['pool'])}</code>" if s["pool"] else '<span class="muted">announced before the activation</span>'
+    rate = f"{s['daa_per_second']:.2f}" if s["daa_per_second"] else "-"
+    seeds = "".join(f"<li><code>{e(x)}</code></li>" for x in s["seeds"]) or "<li class=muted>public seed addresses follow</li>"
+    pool = f"<code>{e(s['pool'])}</code>" if s["pool"] else '<span class="muted">public pool address follows</span>'
     report = f'<a href="{e(a.report_url)}">Daily reports</a>' if a.report_url else ""
     h24 = s["blocks_last_24h"]
     h1 = s["blocks_last_hour"]
@@ -789,7 +795,7 @@ with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-
 </section>
 {stale}
 <section class="grid4">
-<div class="card"><div class="card-label">Virtual DAA score</div><div class="big">{s['virtual_daa_score']:,}</div><div class="muted small">{rate} DAA/s over the last hour</div></div>
+<div class="card"><div class="card-label">Virtual DAA score</div><div class="big">{s['virtual_daa_score']:,}</div><div class="muted small">{rate} DAA/s over the last 30 min</div></div>
 <div class="card"><div class="card-label">Difficulty</div><div class="big">{si(s['difficulty'])}</div><div class="muted small">reference node</div></div>
 <div class="card"><div class="card-label">Hashrate estimate</div><div class="big">{si(s['hashes_per_second'], 'H/s')}</div><div class="muted small">native + merged, last 1,000 blocks</div></div>
 <div class="card"><div class="card-label">Nodes up</div><div class="big">{ok_nodes} / {len(s['nodes'])}</div><div class="muted small">peers per node: {', '.join(map(str, peers)) or '-'}</div></div>
@@ -867,7 +873,7 @@ def main():
     ap.add_argument("--software", action="append", default=[], metavar="NAME=TEXT",
                     help="software label of a node, e.g. 'seed1=sedra-rusty 0.2.0-testnet.1 (Rust)' (repeatable)")
     ap.add_argument("--about", action="append", default=[], metavar="NAME=TEXT",
-                    help="one-line role of a node, e.g. 'seed1=public seed, mines' (repeatable; no host names or IPs)")
+                    help="one-line role of a node, e.g. 'seed2=independent public seed' (repeatable; no host names or IPs)")
     ap.add_argument("--start-time", default="", help="announced chain start in UTC, e.g. 2026-11-27T10:00:00Z: a "
                     "countdown to it until the first block")
     ap.add_argument("--criteria", default="", help="operator JSON for criteria 4-7 (see status_assets/criteria.example.json)")

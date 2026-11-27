@@ -146,7 +146,7 @@ class StatusPageTest(unittest.TestCase):
         s, page = run_page(self.mon, self.www)
         self.assertEqual(s["activation_eta"], {"reached": False, "unix": None, "basis": "stalled"})
         self.assertIn('data-eta="" data-kind="estimate" id="cd-act">paused', page)
-        self.assertIn("has not advanced in the last hour", page)
+        self.assertIn("has not advanced in the last 30 minutes", page)
 
     def test_countdown_after_activation(self):
         info = fixtures.make(self.mon, "merged", step=50)
@@ -155,6 +155,48 @@ class StatusPageTest(unittest.TestCase):
         self.assertIn('id="cd-act">active', page)
         self.assertIn(f"merged mining active since block {s['first_merged_block']['hash'][:16]}… "
                       f"(DAA {info['first_merged']:,}", page)
+
+    def series_nodes(self, points):
+        """nodes.csv for seed1 from (seconds before now, DAA) points."""
+        os.makedirs(self.mon, exist_ok=True)
+        t = int(time.time())
+        with open(os.path.join(self.mon, "nodes.csv"), "w") as f:
+            f.write(fixtures.HDR["nodes.csv"] + "\n")
+            for ago, daa in points:
+                f.write(f"{t - ago},seed1,ok,sedra-testnet-10,{daa},,,1,1,2,1.0.1,\n")
+        return t
+
+    def test_rate_ignores_the_start_and_its_burst(self):
+        # an hour at DAA 0 before the start, a burst of 3,000 DAA in the first 5 minutes at genesis difficulty, then
+        # 45 minutes at one DAA per second: the estimate uses only the recent steady part
+        pts = [(5400 - 60 * i, 0) for i in range(61)]
+        pts += [(2700 + 60 * (5 - i), 600 * i) for i in range(1, 6)]
+        pts += [(2700 - 60 * i, 3000 + 60 * i) for i in range(1, 46)]
+        self.series_nodes(pts)
+        s, page = run_page(self.mon, self.www, "--start-time", "2026-01-01T10:00:00Z")
+        self.assertAlmostEqual(s["daa_per_second"], 1.0, places=6)
+        self.assertEqual(s["activation_eta"]["basis"], "rate")
+        self.assertIn("DAA/s over the last 30 min", page)
+
+    def test_first_minutes_stay_on_the_plan(self):
+        # five minutes of blocks are too few for a rate: the countdowns keep the plan from the announced start
+        start = int(time.time()) - 300
+        self.series_nodes([(600, 0), (360, 0)] + [(300 - 60 * i, 1 + 60 * i) for i in range(6)])
+        s, page = run_page(self.mon, self.www, "--start-time",
+                           time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)))
+        self.assertIsNone(s["daa_per_second"])
+        self.assertEqual(s["activation_eta"], {"reached": False, "unix": start + 345_600, "basis": "plan"})
+        self.assertNotIn('id="cd-start"', page)  # started: the start card is gone
+
+    def test_join_placeholders_after_the_start(self):
+        fixtures.make(self.mon, "native", step=200)
+        _, page = run_page(self.mon, self.www)
+        self.assertIn("public seed addresses follow", page)
+        self.assertIn("public pool address follows", page)
+        self.assertNotIn("at launch", page)
+        _, page = run_page(self.mon, self.www, "--seed", "seed.example:22211")
+        self.assertIn("<code>seed.example:22211</code>", page)
+        self.assertNotIn("public seed addresses follow", page)
 
     def test_bad_start_time_is_rejected(self):
         fixtures.make(self.mon, "native", step=200)
