@@ -13,7 +13,8 @@ Usage:
          [--software NAME=TEXT ...] [--about NAME=TEXT ...] [--start-time 2026-11-27T10:00:00Z]
          [--criteria criteria.json] [--publish user@host:/var/www/testnet/]
 
-Shown: a TEST NETWORK banner; the phase; before the first block a countdown to the announced start (`--start-time`,
+Shown: a TEST NETWORK banner; the phase; a plain-language "What is this?" (the text of sedra-project
+testnet/EXPLAINER.md); before the first block a countdown to the announced start (`--start-time`,
 a fixed time, also in the visitor's local time); countdowns to the ban start and the activation, estimated from the
 DAA score and the block rate of the last 30 minutes of blocks (before the start, and in the first ten minutes after
 it, the plan at one DAA per second; no estimate while the
@@ -57,6 +58,7 @@ DEFAULTS = {
     "release_url": f"{GITHUB}/sedra-rusty/releases/tag/sedra-v0.2.0-testnet.1",
     "checksums_url": f"{GITHUB}/sedra-project/blob/main/release/v0.2.0-testnet.1-SHA256SUMS",
     "sip_url": f"{GITHUB}/sedra-project/blob/main/proposals/SIP-0003-public-testnet.md",
+    "explainer_url": f"{GITHUB}/sedra-project/blob/main/testnet/EXPLAINER.md",
     "home_url": "https://puddlepool.com",
 }
 CRITERIA = [
@@ -620,6 +622,81 @@ def coin_tree(v, zkas):
             f'<figcaption>{caption}</figcaption></figure>')
 
 
+def explainer(s, links):
+    """Plain-language "What is this?" for people who are not developers. Same text as sedra-project
+    testnet/EXPLAINER.md, which owns it: change it there first, then here. The DAA scores come from the arguments; the
+    dates are the documents' estimates."""
+    g = html.escape(links["guide_url"])
+    ex = html.escape(links["explainer_url"])
+    crit = [
+        "The switch happens exactly at the announced score, and all upgraded nodes stay on one chain. The ban starts "
+        "when written.",
+        "Merged-mined and normally mined blocks appear side by side, and every upgraded node accepts both.",
+        "A node that was not upgraded follows until the first merged-mined block and then stops, as predicted.",
+        "A brand-new node started after the switch can download and check the whole chain.",
+        "The pool pays both test coins (Kaspa testnet and Sedra testnet) to the right miners.",
+        "The Sedra wallet sends and receives test coins.",
+        "At least one person outside this project runs a node or mines and reports what they saw.",
+        "At least two weeks after the switch without the nodes disagreeing about the chain; every problem found is "
+        "fixed and tested again.",
+    ]
+    items = "".join(f"<li>{html.escape(c)}</li>" for c in crit)
+    return f"""<section id="about" class="panel explainer"><h2>What is this?</h2>
+<p>A separate test network for Sedra, running since Friday 2026-11-27. Its coins are test coins: they have no value,
+now or later, and there is no reward, airdrop or allocation for taking part. Nothing changes on Sedra mainnet: no
+mainnet date is set, and supply, balances and rewards stay as they are. The testnet exists so that anyone can watch
+the proposed merged-mining rules work, or fail, in public before anyone decides anything about mainnet.</p>
+<details><summary>What is merged mining?</summary>
+<p>Sedra and Kaspa use the same kind of mining work. Today a miner has to choose one of the two. With merged mining, a
+Kaspa miner's work can count for a Sedra block too, without extra hashing: the pool puts a small Sedra tag into the
+Kaspa block it is working on, and when the work is good enough for Sedra, that Kaspa header is the proof. ZKas is
+already merge-mined with Kaspa this way, so one share could count for up to three coins: KAS, SDR and ZKas.</p>
+<p>Sedra gains the hashrate of every Kaspa miner whose pool chooses to merge-mine it. How much that is depends on how
+many pools take part; at first it is one. Merged mining does not make Sedra "secured by Kaspa" as such: Sedra is as
+strong as the hashrate that actually mines it. Normal (native) Sedra mining keeps working next to it.</p></details>
+<details><summary>What is the self-parent ban?</summary>
+<p>A merged-mined Sedra block must be proven by a Kaspa block, its "parent". The ban stops a Sedra block from carrying a
+Sedra merged-mining tag in its own reward transaction, so it cannot pose as the parent of another Sedra block. Without
+the ban, one piece of work could be counted twice. It starts two days before merged mining opens, so that no block
+mined just before the switch can be used that way just after it.</p></details>
+<details><summary>The phases</summary>
+<p>The chain counts its progress with the DAA score, which grows by about one per second. The countdowns on this page
+show live estimates for each step.</p>
+<ol>
+<li><b>Native phase</b> (from the start on 2026-11-27): normal Sedra mining with CPUs.</li>
+<li><b>Ban start</b> at DAA score <b>{s['ban_start']:,}</b> (about 2026-11-29): the self-parent ban takes effect.</li>
+<li><b>Activation</b> at DAA score <b>{s['activation']:,}</b> (about 2026-12-01): merged-mined blocks become valid.
+Native mining goes on.</li>
+<li><b>At least two weeks</b> of running after activation.</li>
+<li><b>A public report</b>, criterion by criterion, with the evidence. Only if the testnet passes do the Sedra team and
+this project talk about a mainnet plan.</li>
+</ol>
+<p><b>The old Go node (<code>old-go</code>)</b> runs Sedra's current software, never upgraded. It should follow the
+chain until the first merged-mined block and then stop. That shows what happens to any node that does not upgrade.</p>
+</details>
+<details><summary>What we check</summary>
+<ol>{items}
+<li><i>Proposed extra, not one of the eight the Sedra team accepted:</i> one Kaspa block carries both a Sedra and a
+ZKas tag; both chains accept their blocks, neither disturbs the other, and no share is paid twice. The ZKas side is a
+private test chain used only by the testnet pool.</li>
+</ol>
+<p class="muted small">Live status of each: <a href="#criteria">pass criteria</a> below.</p></details>
+<details><summary>How to help</summary>
+<ul>
+<li><b>Run a node</b>: <a href="{g}#4-run-a-node">guide §4</a>.</li>
+<li><b>Mine</b>: until activation with a CPU, or one GPU at low intensity (<a href="{g}#6-mine-natively-sedra-only">guide
+§6</a>, <a href="{g}#7-mine-merged-kaspa-testnet-10-and-sedra-testnet-at-once">§7</a>); after activation through the
+testnet pool. Please no Kaspa ASICs.</li>
+<li><b>No miner?</b> Ask the faucet for test coins (<a href="{g}#5-wallet">guide §5</a>).</li>
+<li><b>Tell us what you see</b>, good or bad: a "Testnet report" issue (<a href="{g}#8-report-what-you-see">guide
+§8</a>); progress is posted on <a href="{GITHUB}/sedra-project/issues/13">#13</a>.</li>
+</ul></details>
+<p class="muted small">This explains; it decides nothing. Same text as <a href="{ex}">EXPLAINER.md</a>; the rules are in
+<a href="{GITHUB}/sedra-project/blob/main/proposals/SIP-0001-merged-mining.md">SIP-0001</a> and
+<a href="{GITHUB}/sedra-project/blob/main/proposals/SIP-0003-public-testnet.md">SIP-0003</a>.</p>
+</section>"""
+
+
 def render(s, a, phase_key, hash_series, ver):
     e = html.escape
     links = {k: getattr(a, k) or v for k, v in DEFAULTS.items()}
@@ -779,7 +856,7 @@ is the first 8 bytes of its parent's hash.</p>
 <div class="top-inner">
 <a class="brand" href="{e(links['home_url'])}" title="Back to puddlepool.com"><span class="halo"><img src="{ASSETS}/logo.svg{v}" alt=""></span>
 <span class="brand-text"><span class="brand-name">puddlepool.com</span><span class="brand-badge">Sedra testnet status</span></span></a>
-<nav class="top-nav"><a href="#join">Join</a><a href="#criteria">Pass criteria</a><a href="#blocks">Blocks</a><a href="#nodes">Nodes</a>
+<nav class="top-nav"><a href="#about">What is this?</a><a href="#join">Join</a><a href="#criteria">Pass criteria</a><a href="#blocks">Blocks</a><a href="#nodes">Nodes</a>
 <a href="{e(links['home_url'])}">← puddlepool.com</a>
 <button type="button" class="theme-btn" id="theme-btn" hidden aria-label="Switch light or dark theme">◐</button></nav>
 </div></header>
@@ -794,6 +871,7 @@ with Kaspa testnet-10 as the parent chain. Native CPU blocks first, then merged-
 <div class="phase-chip"><span class="dot"></span>{e(s['phase'])}</div>
 </section>
 {stale}
+{explainer(s, links)}
 <section class="grid4">
 <div class="card"><div class="card-label">Virtual DAA score</div><div class="big">{s['virtual_daa_score']:,}</div><div class="muted small">{rate} DAA/s over the last 30 min</div></div>
 <div class="card"><div class="card-label">Difficulty</div><div class="big">{si(s['difficulty'])}</div><div class="muted small">reference node</div></div>

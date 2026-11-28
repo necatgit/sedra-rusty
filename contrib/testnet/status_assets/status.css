@@ -260,6 +260,17 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .pill.run { color: var(--gold); }
 .node-about { color: var(--muted); font-size: 0.74rem; min-width: 14rem; max-width: 22rem; white-space: normal; margin-top: 0.15rem; }
 
+/* "What is this?": plain text for non-developers, sections fold open */
+.explainer p, .explainer li { max-width: 46rem; line-height: 1.55; }
+.explainer details { border-top: 1px solid var(--row); padding: 0.15rem 0; }
+.explainer summary {
+  cursor: pointer; padding: 0.55rem 0; font-family: var(--f-head); font-weight: 600; color: var(--bright);
+}
+.explainer summary:hover { color: var(--cyan); }
+.explainer details[open] summary { color: var(--cyan); }
+.explainer ol, .explainer ul { padding-left: 1.3rem; }
+.explainer li { margin: 0.25rem 0; }
+
 /* Join */
 .join-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; margin-top: 0.7rem; }
 .join-card {

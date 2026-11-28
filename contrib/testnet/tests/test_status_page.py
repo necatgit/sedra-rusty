@@ -3,6 +3,7 @@
 
 Run: python3 -m unittest discover -s contrib/testnet/tests -v
 """
+import html
 import json
 import os
 import subprocess
@@ -197,6 +198,27 @@ class StatusPageTest(unittest.TestCase):
         _, page = run_page(self.mon, self.www, "--seed", "seed.example:22211")
         self.assertIn("<code>seed.example:22211</code>", page)
         self.assertNotIn("public seed addresses follow", page)
+
+    def test_plain_explainer(self):
+        # the "What is this?" text (sedra-project testnet/EXPLAINER.md): the scores follow the arguments, the key
+        # facts stay, nothing implies value or a mainnet date
+        fixtures.make(self.mon, "native", step=200)
+        _, page = run_page(self.mon, self.www)
+        about = page[page.index('<section id="about"'):]
+        about = about[:about.index("</section>")]
+        self.assertIn('href="#about"', page)
+        self.assertIn("DAA score <b>172,800</b>", about)
+        self.assertIn("DAA score <b>345,600</b>", about)
+        self.assertIn("they have no value", about)
+        self.assertIn("no\nmainnet date is set", about)
+        self.assertIn('does not make Sedra "secured by Kaspa"', html.unescape(about))
+        self.assertEqual(about.count("<details>"), 5)
+        check = about[about.index("What we check"):]
+        self.assertEqual(check[:check.index("</ol>")].count("<li>"), 9)
+        self.assertIn("testnet/EXPLAINER.md", about)
+        _, page = run_page(self.mon, self.www, "--activation", "400000")
+        self.assertIn("DAA score <b>400,000</b>", page)
+        self.assertIn("DAA score <b>227,200</b>", page)
 
     def test_bad_start_time_is_rejected(self):
         fixtures.make(self.mon, "native", step=200)
